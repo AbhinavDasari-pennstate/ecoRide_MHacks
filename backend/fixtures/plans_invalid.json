@@ -1,0 +1,32 @@
+[
+  {
+    "name": "unknown vehicle",
+    "plan": {"groups": [{"driver_trip_id": 3, "passenger_trip_ids": [1, 2], "vehicle_id": 999, "pickup_order": [], "depart_time": "{DEPART}", "rationale": []}], "unassigned": []},
+    "expect": ["vehicle 999 does not exist"]
+  },
+  {
+    "name": "passenger trip as driver",
+    "plan": {"groups": [{"driver_trip_id": 1, "passenger_trip_ids": [2], "vehicle_id": null, "pickup_order": [2], "depart_time": "{DEPART}", "rationale": []}], "unassigned": [{"trip_id": 3, "reason": "left out"}]},
+    "expect": ["trip 1 is a passenger trip and cannot be the driver"]
+  },
+  {
+    "name": "pickup_order missing a passenger",
+    "plan": {"groups": [{"driver_trip_id": 3, "passenger_trip_ids": [1, 2], "vehicle_id": 1, "pickup_order": [1], "depart_time": "{DEPART}", "rationale": []}], "unassigned": []},
+    "expect": ["pickup_order [1] must contain exactly the passenger trip ids [1, 2]"]
+  },
+  {
+    "name": "trip in two groups",
+    "plan": {"groups": [{"driver_trip_id": 3, "passenger_trip_ids": [1, 2], "vehicle_id": 1, "pickup_order": [1, 2], "depart_time": "{DEPART}", "rationale": []}, {"driver_trip_id": 3, "passenger_trip_ids": [2], "vehicle_id": 4, "pickup_order": [2], "depart_time": "{DEPART}", "rationale": []}], "unassigned": []},
+    "expect": ["trip 3 appears in more than one group", "trip 2 appears in more than one group"]
+  },
+  {
+    "name": "depart_time outside windows",
+    "plan": {"groups": [{"driver_trip_id": 3, "passenger_trip_ids": [1, 2], "vehicle_id": null, "pickup_order": [], "depart_time": "{DEPART_BAD}", "rationale": []}], "unassigned": []},
+    "expect": ["is outside trip 1's window", "is outside trip 2's window", "is outside trip 3's window"]
+  },
+  {
+    "name": "unknown trip",
+    "plan": {"groups": [{"driver_trip_id": 3, "passenger_trip_ids": [1, 999], "vehicle_id": 1, "pickup_order": [1, 999], "depart_time": "{DEPART}", "rationale": []}], "unassigned": [{"trip_id": 2, "reason": "left out"}]},
+    "expect": ["trip 999 does not exist"]
+  }
+]

@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+psycopg[binary,pool]
+httpx
+python-dotenv
+google-genai
+pytest
+tzdata

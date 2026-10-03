@@ -1,0 +1,21 @@
+{
+  "trip": {
+    "id": 1,
+    "user_id": 2,
+    "role": "passenger",
+    "origin_lat": 42.28,
+    "origin_lng": -83.733,
+    "dest_name": "Meijer (Ann Arbor-Saline Rd)",
+    "dest_place_id": null,
+    "dest_lat": 42.2394,
+    "dest_lng": -83.766,
+    "window_start": "2026-10-10T17:45:00+00:00",
+    "window_end": "2026-10-10T18:30:00+00:00",
+    "party_size": 1,
+    "max_detour_mi": 2.0,
+    "needs_vehicle": false,
+    "status": "open",
+    "created_at": "2026-10-03T20:25:29.791266+00:00"
+  },
+  "planning": "queued"
+}

@@ -1,0 +1,2 @@
+# Local Postgres for offline dev/tests. Set DATABASE_URL=local in .env to use it.
+pgserver
