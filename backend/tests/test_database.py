@@ -226,3 +226,49 @@ def test_remote_seed_requires_explicit_reset_flag(monkeypatch):
     monkeypatch.setattr(config, "DATABASE_URL", "postgresql://unused.invalid/demo")
     with pytest.raises(ValueError, match="--reset-demo-db"):
         seed.reset()
+
+
+def test_web_demo_bootstrap_is_additive_and_repeatable(database):
+    first = apply.demo_bootstrap()
+    second = apply.demo_bootstrap()
+    assert [u["id"] for u in first["users"]] == [u["id"] for u in second["users"]]
+    assert [v["id"] for v in first["vehicles"]] == [v["id"] for v in second["vehicles"]]
+    with db.conn() as c:
+        assert c.execute("select count(*) as n from users").fetchone()["n"] == 14
+        assert c.execute("select count(*) as n from vehicles").fetchone()["n"] == 8
+    apply.cancel_vehicle(first["vehicles"][0]["id"])
+    assert apply.demo_bootstrap()["vehicles"][0]["active"] is False
+
+
+def test_web_demo_survives_reload_and_restart_preserves_other_accounts(database):
+    other = trip(database)
+    # Keep the unrelated request out of the grocery group.
+    with db.conn() as c:
+        c.execute("update trips set dest_lat = 41 where id = %s", (other["id"],))
+    with TestClient(app) as client:
+        meta = client.post("/demo/bootstrap").json()
+        uid = next(u["id"] for u in meta["users"] if u["alias"] == "alex")
+        first = client.post("/demo/trips")
+        assert first.status_code == 200
+        assert client.post("/demo/trips").json()["trip"]["id"] == first.json()["trip"]["id"]
+        dashboard = client.get(f"/users/{uid}/dashboard").json()
+        assert len(dashboard["trips"]) == 1
+        assert len(dashboard["matches"][0]["members"]) == 3
+        assert client.post("/demo/restart").status_code == 200
+        assert client.get(f"/users/{uid}/dashboard").json()["trips"][0]["status"] == "cancelled"
+    with db.conn() as c:
+        assert c.execute("select status from trips where id = %s", (other["id"],)).fetchone()["status"] == "open"
+
+
+def test_web_vehicle_selection_validates_and_reopens_confirmation(database):
+    before = proposed(database)
+    with TestClient(app) as client:
+        mid = before["id"]
+        assert client.post(f"/matches/{mid}/vehicle", json={"vehicle_id": 99999}).status_code == 422
+        assert client.get(f"/matches/{mid}").json()["status"] == "confirmed"
+        result = client.post(f"/matches/{mid}/vehicle", json={"vehicle_id": 2})
+        assert result.status_code == 200
+        changed = result.json()
+        assert changed["vehicle_id"] == 2 and changed["status"] == "proposed"
+        assert changed["booking"]["status"] == "requested"
+        assert all(p["status"] == "pending" for p in changed["members"])

@@ -1,77 +1,98 @@
 import { useEffect } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, Check, ChevronRight, Fuel, Mic, Sparkles, X, Zap } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronRight, Fuel, Mic, X, Zap } from "lucide-react";
 import { useMainTrip, useStore, userById, MAIN_TRIP } from "@/lib/store";
-import { reserve_vehicle } from "@/lib/api";
+import * as api from "@/lib/api";
 import * as d from "@/lib/demo";
-import { Avatar, Card, CountUp, Eyebrow, RouteMap, StatusPill } from "@/components/kit";
+import { Avatar, Card, Eyebrow, RouteMap, StatusPill } from "@/components/kit";
 import { Phone } from "@/components/Phone";
 import { ImpactSummary } from "@/components/Impact";
 import { TripCard } from "@/components/TripCard";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
-  { label: "Voice request", title: "Tell ERIDE where you're headed.", sub: "Just talk. We'll turn it into a trip request." },
-  { label: "Matching", title: "Compatible travelers found.", sub: "Riders heading the same way at the same time join your trip." },
-  { label: "Vehicle selection", title: "Two cars fit your window.", sub: "Saturday 1:45 to 4:15 PM, 3 riders, 14.1 miles." },
-  { label: "Rider confirms via text", title: "Maya gets a text.", sub: "No app needed. Riders confirm with one reply." },
-  { label: "Owner approves via text", title: "Sam approves the rental.", sub: "The car owner says yes from their phone." },
-  { label: "Impact summary", title: "Here's what sharing saved.", sub: "Compared with three separate trips." },
-  { label: "Disruption", title: "Plans change. The trip doesn't.", sub: "If a car drops out, ERIDE finds the next cleanest option." },
-];
-
-export const Route = createFileRoute("/trip/$step")({
-  head: ({ params }) => {
-    const n = Number(params.step);
-    const s = STEPS[n - 1];
-    const title = s ? `Step ${n}: ${s.label} | ERIDE` : "Trip confirmed | ERIDE";
-    const desc = s ? s.sub : "Your shared grocery trip is confirmed.";
-    return { meta: [{ title }, { name: "description", content: desc }, { property: "og:title", content: title }, { property: "og:description", content: desc }] };
+  {
+    label: "Trip request",
+    title: "Tell ERIDE where you're headed.",
+    sub: "Try the guided conversation. Your request is saved to the database.",
   },
-  component: Flow,
-});
+  {
+    label: "Matching",
+    title: "Travel together.",
+    sub: "Compatible travelers and feasible vehicles are selected by the backend.",
+  },
+  {
+    label: "Vehicle selection",
+    title: "Choose your shared vehicle.",
+    sub: "Compare feasible options using the calculated route, price and emissions.",
+  },
+  {
+    label: "Traveler confirmations",
+    title: "Everyone gets a say.",
+    sub: "Each acceptance updates the same trip record.",
+  },
+  {
+    label: "Owner approval",
+    title: "The owner approves the rental.",
+    sub: "The trip confirms once all travelers and the current vehicle owner approve.",
+  },
+  {
+    label: "Impact summary",
+    title: "See the difference sharing makes.",
+    sub: "Projected savings, calculated from this trip and its vehicle.",
+  },
+  {
+    label: "Disruption",
+    title: "Keep the group moving.",
+    sub: "Cancel the vehicle to find a replacement. Everyone reviews the changed plan.",
+  },
+];
+export const Route = createFileRoute("/trip/$step")({ component: Flow });
+const button =
+  "rounded-full bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-40";
 
 function Flow() {
   const { step } = Route.useParams();
   const nav = useNavigate();
   const n = step === "done" ? 8 : Math.min(7, Math.max(1, Number(step) || 1));
-  const voiceLine = useStore((s) => s.ui.voiceLine);
-  const voiceBusy = useStore((s) => s.ui.voiceBusy);
-  const hasTrip = !!useMainTrip();
-  const locked = n === 1 && !(voiceLine >= d.SCRIPT.length && !voiceBusy && hasTrip);
-
-  const go = (k: number) => nav({ to: "/trip/$step", params: { step: k >= 8 ? "done" : String(k) } });
-  const next = () => { if (!locked && n < 8) go(n + 1); };
-  const back = () => (n > 1 ? go(n - 1) : nav({ to: "/" }));
-
+  const busy = useStore((s) => s.busy || s.ui.voiceBusy);
+  const t = useMainTrip();
+  const locked = busy || !t;
+  const go = (k: number) =>
+    nav({ to: "/trip/$step", params: { step: k >= 8 ? "done" : String(k) } });
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("input,textarea,[role=dialog]")) return;
-      if (e.code === "Space") {
+      if ((e.target as HTMLElement).closest("input,textarea,button,[role=dialog]")) return;
+      if (e.code === "Space" && n === 1 && !t) {
         e.preventDefault();
-        if (n === 1 && locked) d.advanceVoice(); else next();
-      } else if (e.key === "ArrowRight") next();
-      else if (e.key === "ArrowLeft") back();
+        void api.perform(d.advanceVoice);
+      } else if (e.key === "ArrowRight" && !locked && n < 8) void go(n + 1);
+      else if (e.key === "ArrowLeft" && n > 1) void go(n - 1);
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   });
-
   if (n === 8) return <Done />;
   const s = STEPS[n - 1]!;
   return (
     <div className="flex flex-1 flex-col">
       <div className="px-6 md:px-10">
-        <div className="flex items-center justify-between text-sm">
-          <span className="font-semibold">Step {n} of 7: {s.label}</span>
-          <Link to="/" className="flex items-center gap-1 text-muted-foreground hover:text-foreground"><X className="size-4" /> Exit</Link>
+        <div className="flex justify-between text-sm">
+          <span>
+            Step {n} of 7: {s.label}
+          </span>
+          <Link to="/" className="flex gap-1">
+            <X className="size-4" /> Exit
+          </Link>
         </div>
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-green transition-all duration-500" style={{ width: `${(n / 7) * 100}%` }} /></div>
+        <div className="mt-2 h-1 rounded-full bg-muted">
+          <div className="h-full rounded-full bg-green" style={{ width: `${(n / 7) * 100}%` }} />
+        </div>
       </div>
-      <main key={n} className="mx-auto flex w-full max-w-6xl flex-1 animate-step flex-col items-center px-6 pb-32 pt-10 text-center md:px-10">
-        <h1 className="max-w-3xl text-3xl font-semibold tracking-tight md:text-5xl">{s.title}</h1>
-        <p className="mt-3 max-w-xl text-lg text-muted-foreground">{s.sub}</p>
-        <div className="mt-10 w-full">
+      <main key={n} className="mx-auto w-full max-w-6xl flex-1 px-6 pb-32 pt-10 text-center">
+        <h1 className="text-3xl font-semibold tracking-tight md:text-5xl">{s.title}</h1>
+        <p className="mx-auto mt-3 max-w-xl text-lg text-muted-foreground">{s.sub}</p>
+        <div className="mt-10">
           {n === 1 && <StepVoice />}
           {n === 2 && <StepMatching />}
           {n === 3 && <StepVehicles />}
@@ -81,208 +102,313 @@ function Flow() {
           {n === 7 && <StepDisruption />}
         </div>
       </main>
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4 md:px-10">
-          <button onClick={back} className="flex items-center gap-2 rounded-full px-5 py-3 font-semibold transition hover:bg-sand"><ArrowLeft className="size-4" /> Back</button>
-          <button onClick={next} disabled={locked} className="flex items-center gap-2 rounded-full bg-primary px-7 py-3 font-bold text-primary-foreground transition hover:brightness-105 active:scale-[0.97] disabled:opacity-40">
-            {n === 7 ? "Finish" : "Continue"} <ArrowRight className="size-4" />
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95">
+        <div className="mx-auto flex max-w-6xl justify-between px-6 py-4">
+          <button
+            onClick={() => (n > 1 ? void go(n - 1) : void nav({ to: "/" }))}
+            className="flex items-center gap-2 px-5"
+          >
+            <ArrowLeft className="size-4" /> Back
+          </button>
+          <button
+            disabled={locked}
+            onClick={() => void go(n + 1)}
+            className={cn(button, "flex items-center gap-2")}
+          >
+            {n === 7 ? "View trip" : "Continue"}
+            <ArrowRight className="size-4" />
           </button>
         </div>
       </div>
     </div>
   );
 }
-
 function StepVoice() {
   const step = useStore((s) => s.ui.voiceLine);
-  const busy = useStore((s) => s.ui.voiceBusy);
+  const busy = useStore((s) => s.busy || s.ui.voiceBusy);
   const t = useMainTrip();
-  const speaking = step > 0 ? d.SCRIPT[step - 1]!.who : "agent";
-  const done = step >= d.SCRIPT.length;
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-5">
-      <div className="rounded-[2rem] border border-border bg-card p-8 text-left shadow-float">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground"><Mic className="size-5" /></span>
-            <div><div className="text-xs uppercase tracking-[0.18em] opacity-60">Voice call</div><div className="text-lg font-bold">ERIDE Assistant</div></div>
+    <div className="mx-auto max-w-2xl space-y-5 text-left">
+      <Card>
+        <div className="flex items-center gap-3">
+          <Mic />
+          <div>
+            <Eyebrow>Conversation simulation</Eyebrow>
+            <h2 className="text-lg font-bold">ERIDE Assistant</h2>
           </div>
-          <div className="num text-sm opacity-70">00:{String(8 + step * 6).padStart(2, "0")}</div>
         </div>
-        <div className="my-8 flex h-20 items-center justify-center gap-1.5">
-          {Array.from({ length: 32 }).map((_, i) => (
-            <span key={i} className="animate-wave w-1 rounded-full bg-primary" style={{ height: `${24 + ((i * 37) % 52)}px`, animationDelay: `${(i % 7) * 0.09}s`, animationDuration: speaking === "agent" ? "0.8s" : "1.2s", opacity: done ? 0.3 : 1 }} />
-          ))}
-        </div>
-        <div className="min-h-40 space-y-3">
+        <div className="my-8 space-y-4">
           {d.SCRIPT.slice(0, step).map((l, i) => (
-            <div key={i} className={`animate-fade-in ${l.who === "agent" ? "" : "text-right"}`}>
-              <div className="text-[10px] font-semibold uppercase tracking-widest opacity-50">{l.who === "agent" ? "ERIDE" : "Alex"}</div>
-              <div className={`mt-1 inline-block max-w-[85%] rounded-2xl px-4 py-2 text-[15px] ${l.who === "agent" ? "border border-border bg-card" : "bg-sand"}`}>{l.text}</div>
+            <div key={i} className={l.who === "user" ? "text-right" : ""}>
+              <span className="inline-block max-w-[90%] rounded-2xl bg-sand px-4 py-3">
+                {l.text}
+              </span>
             </div>
           ))}
-          {busy && <div className="text-sm opacity-70">Creating trip...</div>}
-          {step === 0 && <div className="pt-8 text-center text-sm opacity-60">Press space or Next line to start the conversation</div>}
         </div>
-        <div className="mt-6 flex justify-end">
-          <button onClick={() => d.advanceVoice()} disabled={done || busy} className="flex items-center gap-2 rounded-full bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-40">
-            {done ? "Call ended" : "Next line"} <ChevronRight className="size-4" />
-            <kbd className="rounded bg-muted px-1.5 text-[10px]">SPACE</kbd>
+        {!t && (
+          <button
+            disabled={busy}
+            onClick={() => void api.perform(d.advanceVoice)}
+            className={cn(button, "flex items-center gap-2")}
+          >
+            {busy ? "Creating trip?" : "Next line"}
+            <ChevronRight className="size-4" />
           </button>
-        </div>
-      </div>
-      {done && t && (
-        <Card className="mx-auto flex max-w-md animate-pop items-center gap-3 text-left">
-          <span className="grid size-9 place-items-center rounded-full bg-lime text-lime-foreground"><Check className="size-5" /></span>
-          <div className="font-semibold">Trip request created: Meijer, Sat 2:00 PM</div>
-        </Card>
-      )}
+        )}
+        {t && (
+          <div className="flex items-center gap-3 text-primary">
+            <Check /> Saved: {t.destination}, {t.day} {t.departure}
+          </div>
+        )}
+      </Card>
+      {t && <TripCard t={t} />}
     </div>
   );
 }
-
 function StepMatching() {
   const t = useMainTrip();
-  useEffect(() => { d.ensureMatches(); }, []);
-  const riders = t?.participants ?? [];
+  const busy = useStore((s) => s.busy);
+  useEffect(() => {
+    void api.perform(d.ensureMatches);
+  }, []);
   return (
-    <div className="grid gap-6 text-left lg:grid-cols-[1fr_1.3fr]">
+    <div className="grid gap-6 text-left lg:grid-cols-2">
       <div className="space-y-3">
-        {riders.map((p) => (
-          <Card key={p.userId} className="flex animate-fade-in items-center gap-4 p-5">
-            <Avatar id={p.userId} size={48} />
-            <div className="flex-1">
-              <div className="text-lg font-bold">{userById(p.userId).name}</div>
-              <div className="text-sm text-muted-foreground">{p.role === "Driver" ? "Driver, needs a car" : `Passenger · ${userById(p.userId).dorm}`}</div>
+        {t?.participants.map((p) => (
+          <Card key={p.userId}>
+            <div className="flex items-center gap-3">
+              <Avatar id={p.userId} />
+              <div className="flex-1">
+                <b>{userById(p.userId).name}</b>
+                <p>
+                  {p.role}
+                  {p.matchPct != null && ` ? ${p.matchPct}% match`}
+                </p>
+              </div>
+              <StatusPill status={p.status} />
             </div>
-            {p.matchPct ? <div className="text-right"><div className="text-3xl font-semibold text-primary"><CountUp to={p.matchPct} suffix="%" /></div><div className="text-[10px] uppercase tracking-widest text-muted-foreground">match</div></div> : <StatusPill status="CONFIRMED" label="YOU" />}
           </Card>
         ))}
-        {riders.length < 3 && <div className="flex items-center gap-2 p-4 text-muted-foreground"><span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" /> Looking for compatible travelers...</div>}
-        {riders.length >= 3 && <div className="animate-fade-in px-1 py-2 text-muted-foreground">Grouped into one trip · Vehicle required: <span className="text-primary">yes</span></div>}
+        <p className="text-muted-foreground">{t?.explanation ?? "Finding compatible trips?"}</p>
+        <button
+          disabled={busy}
+          className={button}
+          onClick={() => void api.perform(() => api.find_matches(MAIN_TRIP))}
+        >
+          Retry matching
+        </button>
       </div>
-      <Card className="p-3"><RouteMap /></Card>
+      <Card>
+        <RouteMap />
+        <p className="mt-3 text-xs text-muted-foreground">
+          {t?.distanceSource === "estimate"
+            ? "Estimated route; no live road data"
+            : "Pickup route from the backend"}
+        </p>
+      </Card>
     </div>
   );
 }
-
 function StepVehicles() {
   const t = useMainTrip();
   const vehicles = useStore((s) => s.vehicles);
-  useEffect(() => { d.ensureVehicle(); }, []);
-  const selected = t?.vehicleId ?? "tesla";
+  const busy = useStore((s) => s.busy);
+  useEffect(() => {
+    void api.perform(d.ensureVehicle);
+  }, []);
+  const candidates = t?.options ?? [];
   return (
     <div className="space-y-6 text-left">
       <div className="grid gap-6 md:grid-cols-2">
-        {["tesla", "civic"].map((id) => {
-          const v = vehicles.find((x) => x.id === id)!;
-          const on = selected === id;
-          const ev = v.type === "EV";
+        {candidates.map((option) => {
+          const v = vehicles.find((v) => Number(v.id) === option.vehicle_id);
+          if (!v) return null;
+          const on = t?.vehicleId === v.id;
           return (
-            <Card key={id} className={cn("relative transition", on && "ring-4 ring-primary")}>
-              {on && <div className="absolute -top-3 left-6 animate-pop rounded-full bg-primary px-3 py-1 text-xs font-bold text-primary-foreground">AUTO-SELECTED</div>}
-              <div className="flex items-center justify-between">
-                <div className={cn("grid size-14 place-items-center rounded-2xl", ev ? "bg-lime text-lime-foreground" : "bg-sand text-walnut")}>{ev ? <Zap /> : <Fuel />}</div>
-                <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", ev ? "bg-lime text-lime-foreground" : "bg-sand")}>{ev ? "EV" : "GAS"}</span>
+            <Card key={v.id} className={on ? "ring-2 ring-primary" : ""}>
+              <div className="flex justify-between">
+                {v.type === "EV" ? <Zap /> : <Fuel />}
+                <StatusPill
+                  status={on ? "PENDING" : "AVAILABLE"}
+                  label={on ? "SELECTED" : v.type}
+                />
               </div>
               <h2 className="mt-4 text-2xl font-semibold">{v.name}</h2>
-              <div className="text-sm text-muted-foreground">{v.color} · owned by {userById(v.ownerId).name}</div>
-              <dl className="mt-6 grid grid-cols-3 gap-3">
-                {[["Distance", `${v.distanceMi} mi`], ["Rate", `$${v.rate}/hr`], ["Trip CO2", `${(14.1 * v.kgPerMi).toFixed(1)} kg`]].map(([k, val]) => (
-                  <div key={k} className=""><dt className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{k}</dt><dd className="num text-xl font-bold">{val}</dd></div>
+              <p className="text-muted-foreground">
+                Owner {userById(v.ownerId).name} ? ${v.rate}/hr
+              </p>
+              <dl className="mt-5 grid grid-cols-3 gap-3">
+                {[
+                  ["Deadhead", `${option.deadhead_mi} mi`],
+                  ["Trip cost", `$${(option.total_cost_cents / 100).toFixed(2)}`],
+                  ["Trip CO2", `${option.kg_co2.toFixed(2)} kg`],
+                ].map(([k, val]) => (
+                  <div key={k}>
+                    <dt className="text-xs text-muted-foreground">{k}</dt>
+                    <dd className="text-xl font-bold">{val}</dd>
+                  </div>
                 ))}
               </dl>
-              {t && !on && <button onClick={() => reserve_vehicle(MAIN_TRIP, id)} className="mt-5 w-full rounded-xl border border-border py-2.5 text-sm font-semibold transition hover:bg-sand">Choose this instead</button>}
+              {!option.feasible && (
+                <p className="mt-4 text-sm text-destructive">{option.why_not.join("; ")}</p>
+              )}
+              {!on && (
+                <button
+                  disabled={busy || !option.feasible}
+                  className={cn(button, "mt-5")}
+                  onClick={() => void api.perform(() => api.reserve_vehicle(MAIN_TRIP, v.id))}
+                >
+                  Choose {v.name}
+                </button>
+              )}
             </Card>
           );
         })}
       </div>
-      <div className="flex items-start gap-3 border-t border-border pt-6 text-muted-foreground">
-        <Sparkles className="mt-0.5 size-5 shrink-0 text-green" />
-        <p className="text-base">Closest car is gas and slightly cheaper, but we prioritize the lowest-emissions feasible option.</p>
-      </div>
+      {!candidates.length && <p>No feasible vehicle yet. Retry matching on the previous step.</p>}
+      <p className="text-muted-foreground">{t?.explanation}</p>
     </div>
   );
 }
-
-function PhoneLayout({ userId, children }: { userId: string; children: React.ReactNode }) {
+function TravelerApprovals() {
+  const t = useMainTrip();
+  const busy = useStore((s) => s.busy);
   return (
-    <div className="flex flex-col items-center justify-center gap-10 md:flex-row">
-      <Phone userId={userId} />
-      <div className="w-full max-w-sm space-y-4 text-left">{children}</div>
+    <div className="space-y-3">
+      {t?.participants.map((p) => (
+        <Card key={p.userId}>
+          <div className="flex flex-wrap items-center gap-3">
+            <Avatar id={p.userId} />
+            <b className="flex-1">{userById(p.userId).name}</b>
+            <StatusPill status={p.status} />
+            {p.status === "PENDING" && (
+              <button
+                className={button}
+                disabled={busy}
+                onClick={() => void api.perform(() => api.accept_match(MAIN_TRIP, p.userId))}
+              >
+                Accept for {userById(p.userId).name}
+              </button>
+            )}
+          </div>
+        </Card>
+      ))}
     </div>
   );
 }
-
 function StepRider() {
   const t = useMainTrip();
-  useEffect(() => { d.step4(); }, []);
-  const maya = t?.participants.find((p) => p.userId === "maya");
+  useEffect(() => {
+    void api.perform(d.step4);
+  }, [t?.matchId, t?.vehicleId]);
   return (
-    <PhoneLayout userId="maya">
-      <Card>
-
-        <div className="flex items-center gap-3">
-          <Avatar id="maya" size={44} />
-          <div className="flex-1"><div className="font-bold">Maya Chen</div><div className="text-sm text-muted-foreground">Passenger · 94% match</div></div>
-          {maya && <StatusPill status={maya.status} />}
-        </div>
-      </Card>
-    </PhoneLayout>
+    <div className="grid gap-8 text-left md:grid-cols-2">
+      <TravelerApprovals />
+      <Phone userId="maya" />
+    </div>
   );
 }
-
-function StepOwner() {
+function OwnerApproval() {
   const t = useMainTrip();
   const vehicles = useStore((s) => s.vehicles);
-  useEffect(() => { d.step5(); }, []);
-  const v = vehicles.find((x) => x.id === (t?.vehicleId ?? "tesla"))!;
+  const bookings = useStore((s) => s.bookings);
+  const busy = useStore((s) => s.busy);
+  const v = vehicles.find((v) => v.id === t?.vehicleId);
+  const b = bookings.find((b) => b.tripId === MAIN_TRIP);
+  if (!v || !b) return <p>No vehicle reservation yet.</p>;
   return (
-    <PhoneLayout userId="sam">
-      <Card>
-        <div className="flex items-center justify-between"><Eyebrow>Vehicle</Eyebrow><StatusPill status={t?.vehicleState ?? "PENDING"} /></div>
-        <div className="mt-2 text-2xl font-bold">{v.name}</div>
-        <div className="text-sm text-muted-foreground">Owner Sam Patel · Sat 1:45 to 4:15 PM</div>
-      </Card>
-      <Card>
-        <div className="flex items-center justify-between"><Eyebrow>Trip</Eyebrow>{t && <StatusPill status={t.status} />}</div>
-        <div className="mt-2 text-lg font-bold">Meijer, Sat 2:00 PM</div>
-      </Card>
-    </PhoneLayout>
+    <Card>
+      <h2 className="text-xl font-bold">{v.name}</h2>
+      <p>Owner: {userById(v.ownerId).name}</p>
+      <p className="my-3">
+        {b.window} ? ${b.amount.toFixed(2)} rental
+      </p>
+      <StatusPill status={b.status} />
+      {b.status === "PENDING" && (
+        <div className="mt-4 flex gap-3">
+          <button
+            disabled={busy}
+            className={button}
+            onClick={() => void api.perform(() => api.respond_booking(b.id, true))}
+          >
+            Approve as {userById(v.ownerId).name}
+          </button>
+          <button
+            disabled={busy}
+            className="px-4 underline"
+            onClick={() => void api.perform(() => api.respond_booking(b.id, false))}
+          >
+            Decline
+          </button>
+        </div>
+      )}
+    </Card>
   );
 }
-
+function StepOwner() {
+  const t = useMainTrip();
+  const owner = useStore((s) => s.vehicles.find((v) => v.id === t?.vehicleId)?.ownerId);
+  useEffect(() => {
+    void api.perform(d.step5);
+  }, [t?.matchId, t?.vehicleId]);
+  return (
+    <div className="grid gap-8 text-left md:grid-cols-2">
+      <OwnerApproval />
+      {owner && <Phone userId={owner} />}
+    </div>
+  );
+}
 function StepDisruption() {
   const t = useMainTrip();
+  const busy = useStore((s) => s.busy);
   const phase = useStore((s) => s.ui.disruption);
-  useEffect(() => { d.ensureVehicle(); }, []);
-  if (!t) return null;
+  if (!t) return <p>Create a trip first.</p>;
   return (
-    <div className="space-y-8">
-      {phase === "idle" && (
-        <button onClick={() => d.simulateCancellation()} className="rounded-full border-2 border-destructive px-6 py-3 font-bold text-destructive transition hover:bg-destructive hover:text-destructive-foreground">
-          Simulate vehicle cancellation
+    <div className="space-y-6 text-left">
+      <button
+        disabled={busy || phase === "running" || !t.vehicleId}
+        className="rounded-full border-2 border-destructive px-6 py-3 font-bold text-destructive disabled:opacity-40"
+        onClick={() => void api.perform(d.simulateCancellation)}
+      >
+        {phase === "running" ? "Finding a replacement?" : "Simulate vehicle cancellation"}
+      </button>
+      <TripCard t={t} />
+      {t.vehicleState === "LOST" && (
+        <button
+          className={button}
+          disabled={busy}
+          onClick={() => void api.perform(() => api.find_matches(MAIN_TRIP))}
+        >
+          Retry replacement
         </button>
       )}
-      <div className={cn("grid items-start gap-8", phase === "done" && "lg:grid-cols-[1fr_auto]")}>
-        <TripCard t={t} />
-        {phase === "done" && <div className="animate-fade-in"><Phone userId="maya" /></div>}
-      </div>
-      {t.status === "CONFIRMED" && phase === "done" && (
-        <div className="animate-pop text-lg font-bold">Everyone is confirmed. Press Finish.</div>
+      {(phase === "done" || t.changed) && (
+        <>
+          <h2 className="text-xl font-bold">Review the replacement</h2>
+          <TravelerApprovals />
+          <OwnerApproval />
+        </>
       )}
     </div>
   );
 }
-
 function Done() {
+  const t = useMainTrip();
   return (
-    <main className="flex flex-1 animate-step flex-col items-center justify-center px-6 pb-24 text-center">
-      <span className="grid size-20 animate-pop place-items-center rounded-full bg-lime text-lime-foreground"><Check className="size-10" /></span>
-      <h1 className="mt-8 text-4xl font-semibold tracking-tight md:text-5xl">Trip confirmed</h1>
-      <p className="mt-3 text-lg text-muted-foreground">Meijer, Saturday 2:04 PM in the Nissan Leaf. $7.50 per person.</p>
-      <Link to="/profile" className="mt-10 rounded-full bg-primary px-8 py-4 font-bold text-primary-foreground transition hover:brightness-105 active:scale-[0.97]">Go to profile</Link>
-      <Link to="/" className="mt-4 text-sm font-semibold text-muted-foreground underline underline-offset-4">Back to home</Link>
+    <main className="mx-auto w-full max-w-5xl space-y-6 p-6 pb-20 text-center">
+      <h1 className="text-4xl font-semibold">
+        {t?.status === "CONFIRMED" ? "Trip confirmed" : "Your trip is saved"}
+      </h1>
+      <p className="text-muted-foreground">
+        {t?.status === "CONFIRMED"
+          ? "Every traveler and the vehicle owner have approved."
+          : "The trip is awaiting the remaining confirmations."}
+      </p>
+      {t && <TripCard t={t} />}
+      <Link to="/profile" className={cn(button, "inline-block")}>
+        Go to profile
+      </Link>
     </main>
   );
 }

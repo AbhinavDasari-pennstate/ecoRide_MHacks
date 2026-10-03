@@ -1,5 +1,8 @@
 # Welcome to your Lovable project
 
+The app is connected to the Python backend. Follow the [repository startup guide](../README.md)
+to run both servers and the live database demo. The old in-memory mock API has been replaced with HTTP calls.
+
 This project was built with [Lovable](https://lovable.dev).
 
 ## Build with Lovable

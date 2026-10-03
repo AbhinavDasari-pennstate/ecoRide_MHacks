@@ -647,3 +647,101 @@ def events(since_id: int = 0, limit: int = 200) -> dict:
 def agent_runs(limit: int = 50) -> list[dict]:
     with db.conn() as c:
         return [_out(r) for r in c.execute("select * from agent_runs order by id desc limit %s", (limit,))]
+
+
+# The guided web demo uses real rows, isolated by explicit demo identities.
+# Provisioning is additive; restarting cancels demo trips and retains their history.
+def demo_bootstrap() -> dict:
+    from scripts import seed
+    sat = seed.saturday()
+    users, vehicles = [], []
+    with db.conn() as c:
+        db.lock(c)
+        for name, roles, lat, lng, _ in seed.USERS:
+            alias = name.lower()
+            row = c.execute("select u.* from users u join user_identities i on i.user_id = u.id"
+                            " where i.provider = 'eride-demo' and i.subject = %s", (alias,)).fetchone()
+            if not row:
+                row = c.execute("insert into users(name, roles, home_lat, home_lng) values (%s,%s,%s,%s) returning *",
+                                (name, roles, lat, lng)).fetchone()
+                c.execute("insert into user_identities(provider, subject, user_id) values ('eride-demo',%s,%s)",
+                          (alias, row["id"]))
+            users.append({**_out(row), "alias": alias})
+        for owner, model, fuel, eff, rng, cents, (t0, t1) in seed.VEHICLES:
+            u = users[owner - 1]
+            row = c.execute("select * from vehicles where owner_id = %s and make_model = %s order by id limit 1",
+                            (u["id"], model)).fetchone()
+            if not row:
+                row = c.execute("insert into vehicles(owner_id, make_model, fuel_type, seats, range_mi, efficiency,"
+                                "price_per_hour_cents, lat, lng, avail_start, avail_end, efficiency_source)"
+                                " values (%s,%s,%s,5,%s,%s,%s,%s,%s,%s,%s,%s) returning *",
+                                (u["id"], model, fuel, rng, eff, cents, u["home_lat"], u["home_lng"],
+                                 seed._utc(sat,t0), seed._utc(sat,t1), seed.VEHICLE_SOURCES[model])).fetchone()
+            vehicles.append(_out(row))
+    start, end = seed.scenario_window()
+    return {"users": users, "vehicles": vehicles, "destination": seed.MEIJER,
+            "window_start": start.isoformat(), "window_end": end.isoformat()}
+
+
+def demo_start() -> dict:
+    meta = demo_bootstrap()
+    by_alias = {u["alias"]: u for u in meta["users"]}
+    with db.conn() as c:
+        db.lock(c)
+        driver = c.execute("select * from trips where user_id = %s and status <> 'cancelled' order by id desc limit 1",
+                           (by_alias["alex"]["id"],)).fetchone()
+        if not driver:
+            for alias in ("maya", "jordan", "alex"):
+                u = by_alias[alias]
+                d = {"user_id": u["id"], "role": "driver" if alias == "alex" else "passenger",
+                     "origin_lat": u["home_lat"], "origin_lng": u["home_lng"], **meta["destination"],
+                     "window_start": _ts(meta["window_start"]), "window_end": _ts(meta["window_end"]),
+                     "needs_vehicle": alias == "alex"}
+                row = c.execute(f"insert into trips ({', '.join(d)}) values ({', '.join(['%s'] * len(d))}) returning *",
+                                list(d.values())).fetchone()
+                db.event(c, "trip_created", {"trip_id": row["id"], "user_id": u["id"], "role": d["role"]})
+                if alias == "alex":
+                    driver = row
+        mids = _active_matches(c, driver["id"])
+    if not mids or driver["status"] == "open":
+        run_planning("web_demo", driver["id"])
+    return {"trip": _out(driver)}
+
+
+def demo_restart() -> dict:
+    from scripts import seed
+    meta = demo_bootstrap()
+    ids = [u["id"] for u in meta["users"]]
+    with db.conn() as c:
+        db.lock(c)
+        tids = [r["id"] for r in c.execute("select id from trips where user_id = any(%s::int[]) and status <> 'cancelled'", (ids,))]
+        mids = [r["match_id"] for r in c.execute("select distinct match_id from match_members where trip_id = any(%s::int[])"
+                                                " and status <> 'cancelled'", (tids,))]
+        # A demo trip may have matched another account. Release its membership,
+        # but never cancel that account's request or delete its data.
+        c.execute("update trips set status = 'open' where status <> 'cancelled' and id in"
+                  " (select trip_id from match_members where match_id = any(%s::int[]))", (mids,))
+        c.execute("update bookings set status = 'cancelled' where match_id = any(%s::int[]) and status in ('requested','approved')", (mids,))
+        c.execute("update match_members set status = 'cancelled' where match_id = any(%s::int[])", (mids,))
+        c.execute("update matches set status = 'cancelled', updated_at = now() where id = any(%s::int[])", (mids,))
+        c.execute("update trips set status = 'cancelled' where id = any(%s::int[])", (tids,))
+        for v, spec in zip(meta["vehicles"], seed.VEHICLES):
+            t0, t1 = spec[-1]
+            c.execute("update vehicles set active = true, avail_start = %s, avail_end = %s where id = %s",
+                      (seed._utc(seed.saturday(),t0), seed._utc(seed.saturday(),t1), v["id"]))
+        db.event(c, "demo_restarted", {"trip_ids": tids, "match_ids": mids})
+    return {"ok": True}
+
+
+def select_vehicle(match_id: int, vehicle_id: int) -> dict:
+    m = get_match(match_id)
+    if not m:
+        raise LookupError("Match not found")
+    plan = {"groups": [{"driver_trip_id": m["driver_trip_id"],
+            "passenger_trip_ids": [p["trip_id"] for p in m["members"] if p["role"] == "passenger" and p["status"] != "cancelled"],
+            "pickup_order": m["pickup_order"], "vehicle_id": vehicle_id, "depart_time": m["depart_time"],
+            "rationale": ["Vehicle selected by the traveler"]}]}
+    result = run_planning("vehicle_selected", match_id=match_id, plan=plan)
+    if not result.get("valid", True):
+        raise ValueError("; ".join(result["errors"]))
+    return get_match(match_id)

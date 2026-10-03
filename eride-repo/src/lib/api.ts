@@ -1,146 +1,282 @@
-// Mock API. Each function mutates the central store after fake latency.
-// Swap these bodies for real network calls later.
-import { useStore, MAIN_TRIP, nowTs, type Action, type Trip, type Message } from "./store";
+import {
+  useStore,
+  MAIN_TRIP,
+  nowTs,
+  type Action,
+  type Message,
+  type Booking,
+  type Activity,
+} from "./store";
+import { mapTrip, windowLabel, type Bootstrap, type Dashboard, type ApiVehicle } from "./backend";
 
-const wait = (min = 300, max = 800) => new Promise((r) => setTimeout(r, min + Math.random() * (max - min)));
-const set = useStore.setState;
+const base = (import.meta.env["VITE_API_BASE_URL"] as string | undefined) ?? "/api";
+let metadata: Bootstrap | null = null;
+let initialization: Promise<void> | null = null;
+let refreshing: Promise<void> | null = null;
+let cursor = 0;
 const get = useStore.getState;
-let mid = 0;
+const set = useStore.setState;
 
-const patchTrip = (id: string, fn: (t: Trip) => Partial<Trip>) =>
-  set((s) => ({ trips: s.trips.map((t) => (t.id === id ? { ...t, ...fn(t) } : t)) }));
-
-export async function sendMessage(userId: string, text: string, actions?: Action[]) {
-  set((s) => ({ typing: { ...s.typing, [userId]: true } }));
-  await wait(700, 1000);
-  const m: Message = { id: `m${++mid}`, from: "bot", text, actions, ts: nowTs() };
-  set((s) => ({ typing: { ...s.typing, [userId]: false }, messages: { ...s.messages, [userId]: [...(s.messages[userId] ?? []), m] } }));
+async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${base}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(60000),
+    });
+  } catch {
+    throw new Error("Cannot reach the backend. Check that the API is running, then retry.");
+  }
+  const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
+  if (!response.ok) {
+    const detail = payload?.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : `Request failed (${response.status}). Please retry.`,
+    );
+  }
+  return payload as T;
 }
-export function userReply(userId: string, text: string) {
+
+export function initialize(): Promise<void> {
+  if (initialization) return initialization;
+  initialization = (async () => {
+    metadata = await request<Bootstrap>("/demo/bootstrap", "POST");
+    set({
+      users: metadata.users.map((u, i) => ({
+        id: u.alias,
+        backendId: u.id,
+        name: u.name,
+        role: u.roles.includes("driver")
+          ? "Driver"
+          : u.roles.includes("owner")
+            ? "Owner"
+            : "Passenger",
+        dorm: "Ann Arbor campus",
+        initials: u.name.slice(0, 2).toUpperCase(),
+        hue: i * 47,
+        edu: "",
+      })),
+    });
+    await refresh();
+    set({ ready: true, error: null });
+  })().catch((error: unknown) => {
+    initialization = null;
+    throw error;
+  });
+  return initialization;
+}
+
+export function refresh(): Promise<void> {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    if (!metadata) return;
+    const alex = metadata.users.find((u) => u.alias === "alex")!;
+    const [dashboard, available, impact, feed] = await Promise.all([
+      request<Dashboard>(`/users/${alex.id}/dashboard`),
+      request<ApiVehicle[]>("/vehicles?limit=500"),
+      request<{ kg_co2_avoided: number; miles_avoided: number; trips: number }>("/impact"),
+      request<{ events: Activity[]; last_id: number }>(`/events?since=${cursor}&limit=1000`),
+    ]);
+    const aliases = new Map(metadata.users.map((u) => [u.id, u.alias]));
+    const rows = dashboard.trips.filter((t) => t.status !== "cancelled");
+    const live = dashboard.matches.filter((m) => m.status !== "cancelled");
+    const trips = rows.map((row, i) =>
+      mapTrip(
+        row,
+        live.find((m) => m.driver_trip_id === row.id),
+        aliases,
+        i === 0,
+      ),
+    );
+    const vehiclesById = new Map(available.map((v) => [v.id, v]));
+    for (const m of live) if (m.vehicle) vehiclesById.set(m.vehicle.id, m.vehicle);
+    const vehicles = [...vehiclesById.values()].map((v) => {
+      const m = live.find((m) => m.vehicle_id === v.id);
+      const option = trips[0]?.options.find((o) => o.vehicle_id === v.id);
+      return {
+        id: String(v.id),
+        name: v.make_model,
+        type: v.fuel_type === "ev" ? ("EV" as const) : ("Gas" as const),
+        ownerId: aliases.get(v.owner_id) ?? String(v.owner_id),
+        distanceMi: option?.deadhead_mi ?? 0,
+        rate: v.price_per_hour_cents / 100,
+        kgPerMi: 0,
+        status: !v.active
+          ? ("CANCELLED" as const)
+          : m?.booking?.status === "approved"
+            ? ("RESERVED" as const)
+            : m?.booking?.status === "requested"
+              ? ("PENDING" as const)
+              : ("AVAILABLE" as const),
+        window: windowLabel(v.avail_start, v.avail_end),
+        color: "",
+      };
+    });
+    const bookings: Booking[] = live.flatMap((m) => {
+      const b = m.booking;
+      const t = trips.find((t) => t.matchId === m.id);
+      if (!b || !t) return [];
+      return [
+        {
+          id: String(b.id),
+          vehicleId: String(b.vehicle_id),
+          tripId: t.id,
+          requesterId: t.driverId,
+          window: windowLabel(b.start_ts, b.end_ts),
+          amount: b.price_cents / 100,
+          status:
+            b.status === "approved"
+              ? "APPROVED"
+              : b.status === "requested"
+                ? "PENDING"
+                : b.status === "declined"
+                  ? "DECLINED"
+                  : "CANCELLED",
+        },
+      ];
+    });
+    cursor = feed.last_id;
+    set((s) => ({
+      trips,
+      vehicles,
+      bookings,
+      matches: (trips[0]?.participants ?? [])
+        .filter((p) => p.role === "Passenger")
+        .map((p) => ({
+          userId: p.userId,
+          pct: p.matchPct ?? 0,
+          reason: "Compatible destination and departure window",
+        })),
+      campus: { kg: impact.kg_co2_avoided, miles: impact.miles_avoided, trips: impact.trips },
+      events: [...s.events, ...feed.events].slice(-30),
+      ui: {
+        ...s.ui,
+        ...(trips[0] ? { voiceLine: 4 } : {}),
+        ...(trips[0]?.changed ? { disruption: "done" as const } : {}),
+      },
+    }));
+  })().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
+
+export async function perform<T>(operation: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await operation();
+  } catch (error) {
+    set({ error: error instanceof Error ? error.message : "Something went wrong. Please retry." });
+    return undefined;
+  }
+}
+
+async function mutate<T>(path: string, body?: unknown, method = "POST"): Promise<T> {
+  if (get().busy) throw new Error("Please wait for the current update to finish.");
+  set({ busy: true, error: null });
+  try {
+    if (refreshing) await refreshing;
+    const result = await request<T>(path, method, body);
+    await refresh();
+    return result;
+  } finally {
+    set({ busy: false });
+  }
+}
+const current = () => {
+  const t = get().trips.find((t) => t.id === MAIN_TRIP);
+  if (!t) throw new Error("Create a trip first.");
+  return t;
+};
+const match = () => {
+  const t = current();
+  if (!t.matchId) throw new Error("No match yet. Retry matching.");
+  return t.matchId;
+};
+
+export async function create_trip(_input?: {
+  destination: string;
+  day: string;
+  time: string;
+  driverId: string;
+}) {
+  await initialize();
+  await mutate("/demo/trips");
+  return MAIN_TRIP;
+}
+export async function find_matches(_tripId: string) {
+  const t = current();
+  await mutate("/planner/run", t.matchId ? { match_id: t.matchId } : { trip_id: t.backendTripId });
+  return get().matches;
+}
+export async function get_match_details(userId: string) {
+  await refresh();
+  return get().matches.find((m) => m.userId === userId);
+}
+export async function accept_match(_tripId: string, userId: string) {
+  const u = get().users.find((u) => u.id === userId);
+  if (!u) throw new Error("Unknown participant.");
+  await mutate(`/matches/${match()}/accept`, { user_id: u.backendId });
+}
+export async function reserve_vehicle(_tripId: string, vehicleId: string) {
+  if (current().vehicleId !== vehicleId)
+    await mutate(`/matches/${match()}/vehicle`, { vehicle_id: Number(vehicleId) });
+}
+export async function respond_booking(bookingId: string, approve: boolean) {
+  await mutate(`/bookings/${bookingId}/${approve ? "approve" : "decline"}`);
+}
+export async function cancel_trip(_tripId: string, userId?: string) {
+  const t = current();
+  const id = userId
+    ? t.participants.find((p) => p.userId === userId)?.backendTripId
+    : t.backendTripId;
+  if (!id) throw new Error("Participant is not in this trip.");
+  await mutate(`/trips/${id}/cancel`);
+}
+export async function cancel_vehicle() {
+  const id = current().vehicleId;
+  if (!id) throw new Error("No vehicle to cancel.");
+  await mutate(`/vehicles/${id}/cancel`);
+}
+export async function restart() {
+  await mutate("/demo/restart");
+  set({ messages: {}, sent: {}, ui: { voiceLine: 0, voiceBusy: false, disruption: "idle" } });
+}
+export async function get_sustainability_impact() {
+  await refresh();
+  return current().impact;
+}
+
+// The phone is an interactive demo panel. Booking actions are persisted by the API;
+// these local presentation bubbles do not claim to send a real iMessage.
+export async function sendMessage(userId: string, text: string, actions?: Action[]) {
+  const m: Message = { id: crypto.randomUUID(), from: "bot", text, actions, ts: nowTs() };
+  set((s) => ({ messages: { ...s.messages, [userId]: [...(s.messages[userId] ?? []), m] } }));
+}
+export async function handleAction(userId: string, action: Action) {
+  if (action === "YES" || action === "ACCEPT") await accept_match(MAIN_TRIP, userId);
+  else if (action === "APPROVE" || action === "DECLINE") {
+    const vehicle = get().vehicles.find((v) => v.id === current().vehicleId);
+    if (vehicle?.ownerId !== userId)
+      throw new Error("Only the current vehicle's owner can approve this request.");
+    const b = get().bookings.find((b) => b.tripId === MAIN_TRIP && b.status === "PENDING");
+    if (!b) throw new Error("No pending booking.");
+    await respond_booking(b.id, action === "APPROVE");
+  } else await cancel_trip(MAIN_TRIP, userId);
   set((s) => ({
     messages: {
       ...s.messages,
-      [userId]: [...(s.messages[userId] ?? []).map((m) => ({ ...m, actions: undefined })), { id: `m${++mid}`, from: "me", text, ts: nowTs(), read: true }],
+      [userId]: [
+        ...(s.messages[userId] ?? []).map((m) => ({ ...m, actions: undefined })),
+        { id: crypto.randomUUID(), from: "me", text: action, ts: nowTs() },
+      ],
     },
   }));
-}
-
-export async function create_trip(input: { destination: string; day: string; time: string; driverId: string }) {
-  await wait();
-  if (get().trips.some((t) => t.id === MAIN_TRIP)) return MAIN_TRIP;
-  const trip: Trip = {
-    id: MAIN_TRIP, title: "Grocery run", destination: input.destination, day: input.day, time: input.time, departure: "2:00 PM",
-    roundTripMi: 14.1, window: "1:45 to 4:15 PM", hours: 2.5, driverId: input.driverId,
-    participants: [{ userId: input.driverId, role: "Driver", status: "CONFIRMED", pickup: "1:45 PM" }],
-    vehicleState: "NONE", status: "REQUESTED",
-  };
-  set((s) => ({ trips: [trip, ...s.trips] }));
-  return trip.id;
-}
-
-export async function find_matches(tripId: string) {
-  patchTrip(tripId, () => ({ status: "MATCHING" }));
-  await wait(600, 900);
-  const matches = [
-    { userId: "maya", pct: 94, reason: "Same dorm, same store, flexible 1 to 4 PM" },
-    { userId: "jordan", pct: 89, reason: "Weekly Meijer run, budget under $10" },
-  ];
-  set({ matches });
-  patchTrip(tripId, (t) => ({
-    status: "PENDING",
-    participants: [
-      ...t.participants.filter((p) => p.role === "Driver"),
-      { userId: "maya", role: "Passenger", status: "PENDING", matchPct: 94, pickup: "1:52 PM" },
-      { userId: "jordan", role: "Passenger", status: "PENDING", matchPct: 89, pickup: "1:58 PM" },
-    ],
-  }));
-  return matches;
-}
-
-export async function get_match_details(userId: string) {
-  await wait();
-  return get().matches.find((m) => m.userId === userId);
-}
-
-const recompute = (tripId: string) =>
-  patchTrip(tripId, (t) => ({
-    status: t.participants.every((p) => p.status === "CONFIRMED") && t.vehicleState === "RESERVED" ? "CONFIRMED" : "PENDING",
-  }));
-
-export async function accept_match(tripId: string, userId: string) {
-  await wait();
-  patchTrip(tripId, (t) => ({ participants: t.participants.map((p) => (p.userId === userId ? { ...p, status: "CONFIRMED" } : p)) }));
-  recompute(tripId);
-}
-
-export async function list_vehicle(input: { name: string; type: "EV" | "Gas" | "Hybrid"; rate: number; window: string }) {
-  await wait();
-  const id = `v${Date.now()}`;
-  set((s) => ({
-    vehicles: [...s.vehicles, { id, ...input, ownerId: s.currentUserId === "alex" ? "sam" : s.currentUserId, distanceMi: 0.3, kgPerMi: input.type === "EV" ? 0.12 : input.type === "Hybrid" ? 0.22 : 0.4, status: "AVAILABLE", color: "New listing" }],
-  }));
-  return id;
-}
-
-export async function reserve_vehicle(tripId: string, vehicleId: string) {
-  await wait();
-  const t = get().trips.find((x) => x.id === tripId)!;
-  const v = get().vehicles.find((x) => x.id === vehicleId)!;
-  set((s) => ({
-    vehicles: s.vehicles.map((x) => (x.id === vehicleId ? { ...x, status: "PENDING" } : x)),
-    bookings: [...s.bookings.filter((b) => b.tripId !== tripId), { id: `b${Date.now()}`, vehicleId, tripId, requesterId: t.driverId, window: t.window, amount: v.rate * t.hours, status: "PENDING" }],
-  }));
-  patchTrip(tripId, () => ({ vehicleId, vehicleState: "PENDING" }));
-}
-
-export async function respond_booking(bookingId: string, approve: boolean) {
-  await wait();
-  const b = get().bookings.find((x) => x.id === bookingId);
-  if (!b) return;
-  set((s) => ({
-    bookings: s.bookings.map((x) => (x.id === bookingId ? { ...x, status: approve ? "APPROVED" : "DECLINED" } : x)),
-    vehicles: s.vehicles.map((x) => (x.id === b.vehicleId ? { ...x, status: approve ? "RESERVED" : "AVAILABLE" } : x)),
-  }));
-  patchTrip(b.tripId, () => ({ vehicleState: approve ? "RESERVED" : "NONE" }));
-  recompute(b.tripId);
-}
-
-export async function modify_trip(tripId: string, patch: Partial<Trip>) {
-  await wait();
-  patchTrip(tripId, () => patch);
-}
-
-export async function cancel_trip(tripId: string, userId?: string) {
-  await wait();
-  if (userId) patchTrip(tripId, (t) => ({ participants: t.participants.map((p) => (p.userId === userId ? { ...p, status: "DECLINED" } : p)) }));
-  else set((s) => ({ trips: s.trips.filter((t) => t.id !== tripId) }));
-}
-
-export async function get_sustainability_impact() {
-  await wait();
-  return { milesAvoided: 28.2, separate: 16.9, shared: 1.7, avoided: 15.2, pct: 90 };
-}
-
-// Route quick-reply chips to the right API call.
-export async function handleAction(userId: string, action: Action) {
-  userReply(userId, action);
-  const t = get().trips.find((x) => x.id === MAIN_TRIP);
-  if (!t) return;
-  if (action === "YES") {
-    await accept_match(MAIN_TRIP, userId);
-    await sendMessage(userId, "You're confirmed. I'll remind you before pickup.");
-  } else if (action === "ACCEPT") {
-    await wait();
-    // Accepting the new plan confirms every rider and the trip itself.
-    set((s) => ({ messages: Object.fromEntries(Object.entries(s.messages).map(([k, v]) => [k, v.map((m) => ({ ...m, actions: undefined }))])) }));
-    patchTrip(MAIN_TRIP, (t) => ({ participants: t.participants.map((p) => ({ ...p, status: "CONFIRMED" })), vehicleState: "RESERVED", status: "CONFIRMED" }));
-    await sendMessage(userId, "Great, everyone is confirmed. See you at 2:04 PM.");
-  } else if (action === "APPROVE" || action === "DECLINE") {
-    const b = get().bookings.find((x) => x.tripId === MAIN_TRIP && x.status === "PENDING");
-    if (b) await respond_booking(b.id, action === "APPROVE");
-    await sendMessage(userId, action === "APPROVE" ? "Approved. Your Tesla is reserved 1:45 to 4:15 PM. $20 lands in your account after the trip." : "Declined. We'll find another car.");
-  } else if (action === "CANCEL") {
-    await cancel_trip(MAIN_TRIP, userId);
-    await sendMessage(userId, "You've left the trip. No charge.");
-  }
+  await sendMessage(
+    userId,
+    action === "CANCEL"
+      ? "Your cancellation is saved."
+      : "Your response is saved. The trip confirms when every traveler and the vehicle owner approve.",
+  );
 }

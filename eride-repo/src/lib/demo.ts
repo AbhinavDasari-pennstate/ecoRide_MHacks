@@ -1,89 +1,84 @@
-import { useStore, setUi, MAIN_TRIP, resetStore, type Action } from "./store";
+import { useStore, setUi, MAIN_TRIP, type Action } from "./store";
 import * as api from "./api";
-
 const get = useStore.getState;
 const trip = () => get().trips.find((t) => t.id === MAIN_TRIP);
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 export const SCRIPT: { who: "user" | "agent"; text: string; act?: boolean }[] = [
-  { who: "user", text: "I need to get groceries at Meijer next Saturday afternoon. I can drive, but I don't have a car." },
-  { who: "agent", text: "Got it. Around what time?" },
-  { who: "user", text: "Around two." },
-  { who: "agent", text: "I've created your trip request.", act: true },
+  {
+    who: "user",
+    text: "I need groceries at Meijer next Saturday. I can drive, but I don't have a car.",
+  },
+  { who: "agent", text: "We'll look for a shared afternoon trip." },
+  { who: "user", text: "Around two works for me." },
+  { who: "agent", text: "Creating your trip and finding compatible travelers.", act: true },
 ];
-
 export async function advanceVoice() {
   const { voiceLine, voiceBusy } = get().ui;
-  if (voiceBusy || voiceLine >= SCRIPT.length) return;
-  const line = SCRIPT[voiceLine]!;
-  setUi({ voiceLine: voiceLine + 1 });
-  if (line.act) {
-    setUi({ voiceBusy: true });
-    await api.create_trip({ destination: "Meijer", day: "Sat", time: "2:00 PM", driverId: "alex" });
+  if (voiceBusy || get().busy || voiceLine >= SCRIPT.length) return;
+  if (!SCRIPT[voiceLine]?.act) {
+    setUi({ voiceLine: voiceLine + 1 });
+    return;
+  }
+  setUi({ voiceBusy: true });
+  try {
+    await api.create_trip();
+    setUi({ voiceLine: SCRIPT.length });
+  } finally {
     setUi({ voiceBusy: false });
   }
 }
-export const voiceDone = () => get().ui.voiceLine >= SCRIPT.length && !get().ui.voiceBusy && !!trip();
-
-// Sends a scripted text only once per key, so re-mounting a step never duplicates bubbles.
-function sendOnce(key: string, userId: string, text: string, actions?: Action[]) {
-  if (get().sent[key]) return false;
-  useStore.setState((s) => ({ sent: { ...s.sent, [key]: true } }));
-  return api.sendMessage(userId, text, actions);
-}
-
 export async function ensureTrip() {
-  if (!trip()) await api.create_trip({ destination: "Meijer", day: "Sat", time: "2:00 PM", driverId: "alex" });
+  await api.initialize();
+  if (!trip()) await api.create_trip();
 }
 export async function ensureMatches() {
   await ensureTrip();
-  if (trip()!.participants.length < 3) await api.find_matches(MAIN_TRIP);
+  if (!trip()?.matchId) await api.find_matches(MAIN_TRIP);
 }
 export async function ensureVehicle() {
   await ensureMatches();
-  if (!trip()!.vehicleId) await api.reserve_vehicle(MAIN_TRIP, "tesla");
 }
-
-const INVITE = "Grocery trip found. Meijer, Saturday 2 PM. $6.67 estimated share. 15.2 kg CO2 avoided. Reply YES to join.";
-
+async function sendOnce(key: string, userId: string, text: string, actions?: Action[]) {
+  if (get().sent[key]) return;
+  await api.sendMessage(userId, text, actions);
+  useStore.setState((s) => ({ sent: { ...s.sent, [key]: true } }));
+}
 export async function step4() {
   await ensureVehicle();
-  if (get().sent["maya-invite"]) return;
-  sendOnce("jordan-invite", "jordan", INVITE, ["YES"]);
-  await sendOnce("maya-invite", "maya", INVITE, ["YES"]);
-  // Jordan accepts on his own phone a moment later so the group fills out.
-  setTimeout(() => {
-    const j = trip()?.participants.find((p) => p.userId === "jordan");
-    if (j?.status === "PENDING") api.handleAction("jordan", "YES");
-  }, 4000);
+  const t = trip()!;
+  for (const p of t.participants) {
+    if (p.status !== "PENDING") continue;
+    await sendOnce(
+      `invite-${t.matchId}-${t.vehicleId}-${p.userId}-${t.costs.perPerson}`,
+      p.userId,
+      `${t.destination}, ${t.day} ${t.departure}. Estimated share $${t.costs.perPerson.toFixed(2)}. Group CO2 reduction ${t.impact.avoided.toFixed(2)} kg. Accept your place?`,
+      ["YES", "CANCEL"],
+    );
+  }
 }
 export async function step5() {
   await ensureVehicle();
-  await sendOnce("sam-request", "sam", "Your Tesla has been requested Saturday 1:45 to 4:15 PM. Estimated rental: $20. Reply APPROVE.", ["APPROVE", "DECLINE"]);
+  const t = trip()!;
+  const v = get().vehicles.find((v) => v.id === t.vehicleId);
+  const b = get().bookings.find((b) => b.tripId === MAIN_TRIP && b.status === "PENDING");
+  if (v && b)
+    await sendOnce(
+      `owner-${b.id}`,
+      v.ownerId,
+      `${v.name} requested ${t.day}, ${b.window}. Estimated rental $${b.amount.toFixed(2)}. Approve this booking?`,
+      ["APPROVE", "DECLINE"],
+    );
 }
-
 export async function simulateCancellation() {
-  if (get().ui.disruption !== "idle") return;
+  if (get().busy) return;
   setUi({ disruption: "running" });
-  await ensureVehicle();
-  const s = useStore.setState;
-  s((st) => ({ vehicles: st.vehicles.map((v) => (v.id === "tesla" ? { ...v, status: "AVAILABLE" } : v)) }));
-  await api.modify_trip(MAIN_TRIP, { vehicleState: "LOST", status: "PENDING" });
-  await sleep(1600);
-  await api.modify_trip(MAIN_TRIP, { vehicleState: "REOPTIMIZING" });
-  await sleep(2200);
-  s((st) => ({ vehicles: st.vehicles.map((v) => (v.id === "leaf" ? { ...v, status: "RESERVED" } : v)) }));
-  await api.modify_trip(MAIN_TRIP, {
-    vehicleId: "leaf", vehicleState: "RESERVED", departure: "2:04 PM", changed: true,
-    participants: trip()!.participants.map((p) => ({
-      ...p, status: p.role === "Driver" ? "CONFIRMED" : "PENDING",
-      pickup: p.userId === "alex" ? "1:49 PM" : p.userId === "maya" ? "1:56 PM" : "2:02 PM",
-    })),
-  });
-  setUi({ disruption: "done" });
-  const msg = "Your vehicle changed but your grocery trip is still on. New departure: 2:04 PM. New cost: $7.50 per person. Reply ACCEPT or CANCEL.";
-  sendOnce("change-jordan", "jordan", msg, ["ACCEPT", "CANCEL"]);
-  await sendOnce("change-maya", "maya", msg, ["ACCEPT", "CANCEL"]);
+  try {
+    await api.cancel_vehicle();
+    setUi({ disruption: "done" });
+    await step4();
+    await step5();
+  } catch (error) {
+    setUi({ disruption: "idle" });
+    throw error;
+  }
 }
-
-export const reset = () => resetStore();
+export const reset = () => api.restart();

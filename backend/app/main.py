@@ -124,6 +124,10 @@ class AcceptIn(InputModel):
     user_id: int
 
 
+class VehicleChoiceIn(InputModel):
+    vehicle_id: int = Field(gt=0)
+
+
 class PlannerRunIn(InputModel):
     trip_id: Optional[int] = None
     match_id: Optional[int] = None
@@ -138,6 +142,26 @@ class PlannerRunIn(InputModel):
 def health():
     return {"ok": True, "planner": config.PLANNER, "maps": "live" if config.MAPS_SERVER_KEY else "offline",
             "gemini": "configured" if config.GEMINI_API_KEY else "missing"}
+
+
+@app.post("/demo/bootstrap")
+def demo_bootstrap():
+    return apply.demo_bootstrap()
+
+
+@app.post("/demo/trips")
+def demo_start():
+    return apply.demo_start()
+
+
+@app.post("/demo/restart")
+def demo_restart():
+    return apply.demo_restart()
+
+
+@app.post("/matches/{match_id}/vehicle")
+def select_vehicle(match_id: int, body: VehicleChoiceIn):
+    return apply.select_vehicle(match_id, body.vehicle_id)
 
 
 @app.get("/ready")
