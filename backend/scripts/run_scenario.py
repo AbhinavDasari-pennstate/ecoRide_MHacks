@@ -53,15 +53,15 @@ def cents_ok(m) -> bool:
     return m["cost_per_person_cents"] == math.ceil(m["raw_cost_cents"] / 3) and m["cost_per_person_cents"] * 3 == m["total_cost_cents"]
 
 
-def run(mode: str) -> dict:
+def run(mode: str, *, allow_remote_reset=False) -> dict:
     """One full scenario. Returns representative responses for fixtures/api/."""
     print(f"\n=== planner: {mode} (gemini key {'set' if config.GEMINI_API_KEY else 'missing'},"
           f" maps {'live' if config.MAPS_SERVER_KEY else 'offline'}) ===")
     config.PLANNER = mode
-    s = seed.reset()
+    s = seed.reset(allow_remote_reset=allow_remote_reset)
     U, V = s["users"], s["vehicles"]
     w0 = s["window_start"].isoformat()
-    c = TestClient(app)
+    c = TestClient(app, headers={"Authorization": f"Bearer {config.API_SERVICE_TOKEN}"} if config.API_SERVICE_TOKEN else {})
     dump = {"health": api(c, "GET", "/health")}
 
     # 1. three trips to Meijer: Maya, Jordan, then Alex (driver, no car)
@@ -163,6 +163,10 @@ def run(mode: str) -> dict:
           f"{d['before']['kg_co2_shared']} -> {d['after']['kg_co2_shared']} kg, "
           f"{d['before']['cost_per_person_cents']}c -> {d['after']['cost_per_person_cents']}c each")
     check("8 match not at_risk", rp.get("status") not in (None, "at_risk") and after["status"] != "at_risk", after["status"])
+    check("8 replacement waits for the new owner's approval",
+          after["status"] == "proposed" and after["booking"]["status"] == "requested")
+    check("8 travelers must accept the changed vehicle and fare",
+          {x["status"] for x in after["members"]} == {"pending"})
     check("8 cancelling the Tesla again is a no-op", api(c, "POST", f"/vehicles/{V['Tesla Model 3']}/cancel")["replans"] == [])
 
     # 10. gemini mode: without a key every planner run falls back; with a key just report
@@ -196,11 +200,12 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--planner", choices=["deterministic", "gemini", "both"], default="both")
     ap.add_argument("--write-fixtures", action="store_true")
+    ap.add_argument("--reset-demo-db", action="store_true", help="Allow destructive reset of a remote demo database")
     args = ap.parse_args()
     modes = ["deterministic", "gemini"] if args.planner == "both" else [args.planner]
     for n, mode in enumerate(modes):
         try:
-            dump = run(mode)
+            dump = run(mode, allow_remote_reset=args.reset_demo_db)
         except Exception:
             check(f"{mode} scenario ran to the end", False, traceback.format_exc(limit=3).strip().splitlines()[-1])
             traceback.print_exc()

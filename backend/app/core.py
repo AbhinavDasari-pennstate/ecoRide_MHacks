@@ -61,6 +61,7 @@ class Vehicle(_Row):
     avail_start: datetime
     avail_end: datetime
     active: bool = True
+    efficiency_source: str = "Owner-supplied estimate; not independently verified"
 
     @property
     def loc(self) -> LatLng:

@@ -2,5 +2,5 @@
   "ok": true,
   "planner": "deterministic",
   "maps": "offline",
-  "gemini": "configured"
+  "gemini": "missing"
 }

@@ -33,6 +33,12 @@ VEHICLES = [
     (6, "Toyota RAV4", "gas", 30, 435, 1000, (time(8), time(22))),
     (7, "Nissan Leaf", "ev", 0.304, 149, 900, (time(13, 30), time(17))),
 ]
+VEHICLE_SOURCES = {
+    "Tesla Model 3": "fueleconomy.gov vehicle 50251: 2026 Model 3 Standard RWD, 24.3033 kWh/100mi rounded to 0.243 kWh/mi, 321 mi range; https://www.fueleconomy.gov/ws/rest/vehicle/50251",
+    "Honda Civic": "fueleconomy.gov vehicle 48016: 2025 Civic 4Dr 2.0L CVT, 36 combined mpg; range is a demo estimate; https://www.fueleconomy.gov/ws/rest/vehicle/48016",
+    "Toyota RAV4": "fueleconomy.gov vehicle 48910: 2025 RAV4 FWD 2.5L, 30 combined mpg; range is a demo estimate; https://www.fueleconomy.gov/ws/rest/vehicle/48910",
+    "Nissan Leaf": "fueleconomy.gov vehicle 48400: 2025 LEAF, 30.4264 kWh/100mi rounded to 0.304 kWh/mi, 149 mi range; https://www.fueleconomy.gov/ws/rest/vehicle/48400",
+}
 
 
 def saturday() -> date:
@@ -59,11 +65,14 @@ def destination() -> dict:
     return {**MEIJER, "dest_place_id": g["place_id"], "dest_lat": g["lat"], "dest_lng": g["lng"]}
 
 
-def reset(clear_cache: bool = False) -> dict:
+def reset(clear_cache: bool = False, *, allow_remote_reset: bool = False) -> dict:
+    if config.DATABASE_URL != "local" and not allow_remote_reset:
+        raise ValueError("Seeding deletes app data. Use --reset-demo-db only on a disposable Neon demo branch.")
     db.apply_schema()
     sat, dest = saturday(), destination()
     tables = "users, vehicles, trips, matches, match_members, bookings, agent_runs, events" + (", route_cache" if clear_cache else "")
     with db.conn() as c:
+        db.lock(c)
         c.execute(f"truncate {tables} restart identity cascade")
         for n, (name, roles, lat, lng, rating) in enumerate(USERS, 1):
             c.execute("insert into users (name, phone, roles, home_lat, home_lng, verified, rating)"
@@ -71,8 +80,8 @@ def reset(clear_cache: bool = False) -> dict:
         for owner, model, fuel, eff, rng, cents, (t0, t1) in VEHICLES:
             _, _, lat, lng, _ = USERS[owner - 1]
             c.execute("insert into vehicles (owner_id, make_model, fuel_type, seats, range_mi, efficiency,"
-                      " price_per_hour_cents, lat, lng, avail_start, avail_end) values (%s, %s, %s, 5, %s, %s, %s, %s, %s, %s, %s)",
-                      (owner, model, fuel, rng, eff, cents, lat, lng, _utc(sat, t0), _utc(sat, t1)))
+                      " price_per_hour_cents, lat, lng, avail_start, avail_end, efficiency_source) values (%s, %s, %s, 5, %s, %s, %s, %s, %s, %s, %s, %s)",
+                      (owner, model, fuel, rng, eff, cents, lat, lng, _utc(sat, t0), _utc(sat, t1), VEHICLE_SOURCES[model]))
         if config.MAPS_SERVER_KEY:   # pre-warm route_cache so the demo doesn't wait on Google
             m = maps.Maps(c)
             pts = [(u[2], u[3]) for u in USERS] + [(dest["dest_lat"], dest["dest_lng"])]
@@ -85,7 +94,7 @@ def reset(clear_cache: bool = False) -> dict:
 
 
 if __name__ == "__main__":
-    out = reset(clear_cache="--clear-cache" in sys.argv)
+    out = reset(clear_cache="--clear-cache" in sys.argv, allow_remote_reset="--reset-demo-db" in sys.argv)
     print(f"seeded {len(out['users'])} users, {len(out['vehicles'])} vehicles")
     print(f"destination: {out['destination']['dest_name']} ({out['destination']['dest_lat']:.4f}, {out['destination']['dest_lng']:.4f})")
     print(f"scenario window: {out['window_start'].astimezone(TZ):%a %Y-%m-%d %H:%M}-{out['window_end'].astimezone(TZ):%H:%M} {config.TIMEZONE}")

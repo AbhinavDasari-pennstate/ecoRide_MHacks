@@ -63,7 +63,7 @@
     "distance_mi": 4.95,
     "duration_min": 11.9
   },
-  "status": "confirmed",
+  "status": "proposed",
   "raw_cost_cents": 1889,
   "total_cost_cents": 1890,
   "cost_per_person_cents": 630,
@@ -152,9 +152,11 @@
   "assumptions": {
     "baseline": "each traveler makes a separate gas-car round trip (solo or rideshare); transit is deliberately not the baseline",
     "OWN_CAR_MPG": {
+      "url": "https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle",
       "unit": "mpg",
       "value": 22.2,
-      "source": "EPA (2026) average on-road gasoline vehicle, 22.2 mpg; assumed for drivers bringing their own car"
+      "source": "EPA (2026) average on-road gasoline vehicle, 22.2 mpg; assumed for drivers bringing their own car",
+      "checked_on": "2026-10-03"
     },
     "ROAD_FACTOR": {
       "unit": "ratio",
@@ -180,19 +182,30 @@
       "source": "assumed time parked at the destination"
     },
     "GAS_USD_PER_GALLON": {
+      "url": "https://gasprices.aaa.com/?state=MI",
       "unit": "USD per gallon",
       "value": 4.48,
-      "source": "AAA Gas Prices, Michigan regular average, Oct 3 2026 ($4.48)"
+      "source": "AAA Gas Prices, Michigan regular average, Oct 3 2026 ($4.48)",
+      "checked_on": "2026-10-03"
+    },
+    "vehicle_efficiency": {
+      "unit": "kWh/mi",
+      "value": 0.304,
+      "source": "fueleconomy.gov vehicle 48400: 2025 LEAF, 30.4264 kWh/100mi rounded to 0.304 kWh/mi, 149 mi range; https://www.fueleconomy.gov/ws/rest/vehicle/48400"
     },
     "GRID_KG_CO2_PER_KWH": {
+      "url": "https://www.epa.gov/egrid/summary-data",
       "unit": "kg CO2 per kWh",
       "value": 0.44,
-      "source": "EPA eGRID2023 rev 2 (2025), RFCM (RFC Michigan) CO2 total output rate, 970.6 lb/MWh"
+      "source": "EPA eGRID2023 rev 2 (2025), RFCM (RFC Michigan) CO2 total output rate, 970.6 lb/MWh",
+      "checked_on": "2026-10-03"
     },
     "GAS_KG_CO2_PER_GALLON": {
+      "url": "https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle",
       "unit": "kg CO2 per gallon of gasoline",
       "value": 8.887,
-      "source": "EPA, Greenhouse Gas Emissions from a Typical Passenger Vehicle (2026): 8,887 g CO2/gal"
+      "source": "EPA, Greenhouse Gas Emissions from a Typical Passenger Vehicle (2026): 8,887 g CO2/gal",
+      "checked_on": "2026-10-03"
     },
     "RENTAL_INCREMENT_HOURS": {
       "unit": "hours",
@@ -200,14 +213,18 @@
       "source": "rental rounded up to this increment"
     },
     "ELECTRICITY_USD_PER_KWH": {
+      "url": "https://www.eia.gov/electricity/monthly/epm_table_grapher.php?t=epmt_5_6_a",
       "unit": "USD per kWh",
       "value": 0.2305,
-      "source": "EIA Electric Power Monthly Table 5.6.A (2026), Michigan residential, Jul 2026 (23.05 c/kWh)"
+      "source": "EIA Electric Power Monthly Table 5.6.A (2026), Michigan residential, Jul 2026 (23.05 c/kWh)",
+      "checked_on": "2026-10-03"
     },
     "BASELINE_KG_CO2_PER_MILE": {
+      "url": "https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle",
       "unit": "kg CO2 per mile",
       "value": 0.4,
-      "source": "EPA, Greenhouse Gas Emissions from a Typical Passenger Vehicle (2026): about 400 g CO2/mi"
+      "source": "EPA, Greenhouse Gas Emissions from a Typical Passenger Vehicle (2026): about 400 g CO2/mi",
+      "checked_on": "2026-10-03"
     }
   },
   "last_change": {
@@ -245,15 +262,15 @@
       "cost_per_person_cents": 423
     }
   },
-  "created_at": "2026-10-03T20:25:29.830396+00:00",
-  "updated_at": "2026-10-03T20:25:29.966727+00:00",
+  "created_at": "2026-10-03T21:11:21.683155+00:00",
+  "updated_at": "2026-10-03T21:11:21.878533+00:00",
   "members": [
     {
       "trip_id": 3,
       "user_id": 1,
       "name": "Alex",
       "role": "driver",
-      "status": "accepted",
+      "status": "pending",
       "match_score": 1.0
     },
     {
@@ -261,7 +278,7 @@
       "user_id": 2,
       "name": "Maya",
       "role": "passenger",
-      "status": "accepted",
+      "status": "pending",
       "match_score": 0.51
     },
     {
@@ -269,7 +286,7 @@
       "user_id": 3,
       "name": "Jordan",
       "role": "passenger",
-      "status": "accepted",
+      "status": "pending",
       "match_score": 0.9
     }
   ],
@@ -286,7 +303,8 @@
     "lng": -83.75,
     "avail_start": "2026-10-10T17:30:00+00:00",
     "avail_end": "2026-10-10T21:00:00+00:00",
-    "active": true
+    "active": true,
+    "efficiency_source": "fueleconomy.gov vehicle 48400: 2025 LEAF, 30.4264 kWh/100mi rounded to 0.304 kWh/mi, 149 mi range; https://www.fueleconomy.gov/ws/rest/vehicle/48400"
   },
   "booking": {
     "id": 2,
@@ -296,8 +314,8 @@
     "end_ts": "2026-10-10T20:00:00+00:00",
     "hours": 2.0,
     "price_cents": 1800,
-    "status": "approved",
-    "created_at": "2026-10-03T20:25:29.966727+00:00"
+    "status": "requested",
+    "created_at": "2026-10-03T21:11:21.878533+00:00"
   },
   "costs": {
     "raw_cost_cents": 1889,
