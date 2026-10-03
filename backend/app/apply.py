@@ -17,7 +17,7 @@ _lock = threading.Lock()   # ponytail: single process; the advisory lock only gu
 TRIP_FIELDS = ("user_id", "role", "origin_lat", "origin_lng", "dest_name", "dest_place_id", "dest_lat", "dest_lng",
                "window_start", "window_end", "party_size", "max_detour_mi", "needs_vehicle")
 VEHICLE_FIELDS = ("owner_id", "make_model", "fuel_type", "seats", "range_mi", "efficiency", "price_per_hour_cents",
-                  "lat", "lng", "avail_start", "avail_end")
+                  "lat", "lng", "avail_start", "avail_end", "efficiency_source")
 # match columns written from _numbers()
 COLS = ("vehicle_id", "depart_time", "pickup_order", "route", "raw_cost_cents", "total_cost_cents",
         "cost_per_person_cents", "pricing", "impact", "reasons", "explanation", "assumptions")
@@ -226,6 +226,9 @@ def _numbers(ctx, m, g, opts, names) -> dict:
     price = core.pricing(v, core.shared_miles(ctx, driver, ordered, v)["shared_mi"], core.group_size([driver, *ordered]))
     imp = core.impact(ctx, driver, ordered, v, distance_source=m.source)
     assumptions = imp.pop("assumptions")
+    if v:
+        assumptions["vehicle_efficiency"] = {"value": v.efficiency,
+            "unit": "kWh/mi" if v.fuel_type == "ev" else "mpg", "source": v.efficiency_source}
     alt = next((o for o in opts if o["feasible"] and o["fuel_type"] == "gas" and o["vehicle_id"] != g.vehicle_id), None)
     facts = {"driver": names[driver.id], "passengers": [names[t.id] for t in ordered], "vehicle": v.label if v else None,
              "kg_co2_shared": imp["kg_co2_shared"], "alt_vehicle": ctx.vehicles[alt["vehicle_id"]].label if alt else None,
@@ -279,7 +282,7 @@ def _apply(c, ctx, m, plan, opts, replanned, cause, run_id) -> dict:
             continue
         driver_status = _get(c, "trips", old["driver_trip_id"])["status"]
         status = "cancelled" if driver_status == "cancelled" else "at_risk" if old["driver_trip_id"] in ctx.trips else None
-        if status and status != old["status"]:
+        if status:
             diffs.append(_retire(c, old, status, cause, run_id))
             match_ids.append(old["id"])
     reasons = {u.trip_id: u.reason for u in plan.unassigned}
@@ -306,17 +309,27 @@ def _update_match(c, old, n, cause, run_id) -> dict:
     before = _snapshot(c, mid)
     prev = {r["trip_id"] for r in c.execute(
         "select trip_id from match_members where match_id = %s and status <> 'cancelled'", (mid,))}
+    previous_booking = c.execute("select * from bookings where match_id = %s and status in ('requested', 'approved')",
+                                 (mid,)).fetchone()
+    b = n["booking"]
+    # Approval carries forward only for exactly the reservation the owner approved.
+    approved = bool(b and previous_booking and previous_booking["status"] == "approved"
+                    and all(previous_booking[k] == b[k] for k in ("vehicle_id", "start_ts", "end_ts", "price_cents")))
     c.execute("update bookings set status = 'cancelled' where match_id = %s and status in ('requested', 'approved')", (mid,))
-    status = "proposed" if old["status"] == "at_risk" else old["status"]   # confirmed stays confirmed; a rescued match re-confirms
+    status = "proposed"
     c.execute(f"update matches set {', '.join(f'{k} = %s' for k in COLS)}, status = %s, updated_at = now() where id = %s",
               [*(_db(n[k]) for k in COLS), status, mid])
     c.execute("update match_members set status = 'cancelled' where match_id = %s and not trip_id = any(%s::int[])",
               (mid, n["trip_ids"]))
     _members(c, mid, n)
+    if any(old[k] != n[k] for k in ("vehicle_id", "depart_time", "cost_per_person_cents", "pickup_order")):
+        c.execute("update match_members set status = 'pending' where match_id = %s and status <> 'cancelled'", (mid,))
+        db.event(c, "member_reconfirmation_required", {"match_id": mid, "cause": cause})
     new = [i for i in n["trip_ids"] if i not in prev]
     c.execute("update trips set status = 'matched' where id = any(%s::int[]) and (status = 'open' or id = any(%s::int[]))",
               (n["trip_ids"], new))
-    _book(c, mid, n, "approved", run_id)   # decision: replacement bookings are auto-approved on replan
+    _book(c, mid, n, "approved" if approved else "requested", run_id)
+    c.execute("update trips set status = 'matched' where id = any(%s::int[]) and status <> 'cancelled'", (n["trip_ids"],))
     return _changed(c, mid, cause, before, "match_updated", run_id)
 
 
@@ -399,6 +412,7 @@ def create_trip(data: dict) -> dict:
     d.setdefault("needs_vehicle", d.get("role") == "driver")
     _geocode_dest(d)
     with db.conn() as c:
+        db.lock(c)
         u = c.execute("select * from users where id = %s", (d.get("user_id"),)).fetchone()
         if not u:
             raise ValueError(f"user {d.get('user_id')} does not exist")
@@ -420,6 +434,7 @@ def update_trip(trip_id: int, data: dict) -> dict:
             raise ValueError(f"trip {trip_id} is cancelled")
         row = _one(c, f"update trips set {', '.join(f'{k} = %s' for k in d)} where id = %s returning *", [*d.values(), trip_id])
         mids = _active_matches(c, trip_id)
+        _mark_at_risk(c, mids)
         db.event(c, "trip_updated", {"trip_id": trip_id, "fields": list(d), "match_ids": mids})
     planning = _replan(mids[0], "trip_updated", trip_id) if mids else run_planning("trip_updated", trip_id)
     return {"trip": _out(row), "planning": planning}
@@ -434,6 +449,7 @@ def cancel_trip(trip_id: int) -> dict:
         mids = _active_matches(c, trip_id)
         row = c.execute("update trips set status = 'cancelled' where id = %s returning *", (trip_id,)).fetchone()
         c.execute("update match_members set status = 'cancelled' where trip_id = %s", (trip_id,))
+        _mark_at_risk(c, mids)
         db.event(c, "trip_cancelled", {"trip_id": trip_id, "match_ids": mids})
     return {"trip": _out(row), "replans": [_replan(mid, "trip_cancelled", trip_id) for mid in mids]}
 
@@ -504,6 +520,8 @@ def decline_booking(booking_id: int) -> dict:
             b = c.execute("update bookings set status = 'declined' where id = %s returning *", (booking_id,)).fetchone()
             db.event(c, "booking_declined", {"booking_id": booking_id, "match_id": b["match_id"]})
             live = _get(c, "matches", b["match_id"])["status"] != "cancelled"
+            if live:
+                _mark_at_risk(c, [b["match_id"]])
     return {"booking": _out(b), "replan": _replan(b["match_id"], "booking_declined") if live else None}
 
 
@@ -512,6 +530,7 @@ def decline_booking(booking_id: int) -> dict:
 def create_vehicle(data: dict) -> dict:
     d = _clean(data, VEHICLE_FIELDS)
     with db.conn() as c:
+        db.lock(c)
         if d.get("owner_id") is not None and ("lat" not in d or "lng" not in d):
             u = _one(c, "select * from users where id = %s", (d["owner_id"],))
             if not u:
@@ -535,8 +554,73 @@ def cancel_vehicle(vehicle_id: int) -> dict:
             "update bookings b set status = 'cancelled' from matches m where m.id = b.match_id and b.vehicle_id = %s"
             " and b.status in ('requested', 'approved') and m.status <> 'cancelled' returning b.match_id", (vehicle_id,))]
         mids = sorted(set(mids))
+        _mark_at_risk(c, mids)
         db.event(c, "vehicle_cancelled", {"vehicle_id": vehicle_id, "match_ids": mids})
     return {"vehicle_id": vehicle_id, "replans": [_replan(mid, "vehicle_cancelled") for mid in mids]}
+
+
+def _mark_at_risk(c, mids):
+    """Persist disruption before external planning; a failed replan must not leave a confirmed match."""
+    c.execute("update matches set status = 'at_risk', updated_at = now() where id = any(%s::int[])"
+              " and status <> 'cancelled'", (mids,))
+    c.execute("update trips set status = 'matched' where status = 'confirmed' and id in"
+              " (select trip_id from match_members where match_id = any(%s::int[]) and status <> 'cancelled')", (mids,))
+
+
+# ---------------------------------------------------------------- shared account and dashboard data
+
+def create_user(data: dict) -> dict:
+    """Idempotent account creation using an identity verified by a trusted adapter."""
+    with db.conn() as c:
+        db.lock(c)
+        identity = c.execute("select user_id from user_identities where provider = %s and subject = %s",
+                             (data["provider"], data["subject"])).fetchone()
+        if identity:
+            return _out(_get(c, "users", identity["user_id"]))
+        fields = ("name", "phone", "roles", "home_lat", "home_lng")
+        row = _one(c, f"insert into users ({', '.join(fields)}) values (%s, %s, %s, %s, %s) returning *",
+                   [data.get(k) for k in fields])
+        c.execute("insert into user_identities(provider, subject, user_id) values (%s, %s, %s)",
+                  (data["provider"], data["subject"], row["id"]))
+        db.event(c, "user_created", {"user_id": row["id"]})
+        return _out(row)
+
+
+def link_identity(user_id: int, provider: str, subject: str) -> dict:
+    with db.conn() as c:
+        db.lock(c)
+        _get(c, "users", user_id)
+        row = c.execute("select user_id from user_identities where provider = %s and subject = %s",
+                        (provider, subject)).fetchone()
+        if row and row["user_id"] != user_id:
+            raise ValueError("Identity is already linked to another account")
+        if not row:
+            c.execute("insert into user_identities(provider, subject, user_id) values (%s, %s, %s)",
+                      (provider, subject, user_id))
+            db.event(c, "identity_linked", {"user_id": user_id, "provider": provider})
+        return {"user_id": user_id, "provider": provider, "subject": subject}
+
+
+def dashboard(user_id: int) -> dict:
+    with db.conn() as c:
+        # Consistent view if an approval or replan commits during these reads.
+        c.execute("set transaction isolation level repeatable read read only")
+        user = _out(_get(c, "users", user_id))
+        trips = [_out(r) for r in c.execute("select * from trips where user_id = %s order by created_at desc, id desc", (user_id,))]
+        vehicles = [_out(r) for r in c.execute("select * from vehicles where owner_id = %s order by id", (user_id,))]
+        mids = c.execute("select distinct m.id from matches m left join match_members mm on mm.match_id = m.id"
+                         " left join trips t on t.id = mm.trip_id left join vehicles v on v.id = m.vehicle_id"
+                         " where (t.user_id = %s and mm.status <> 'cancelled') or v.owner_id = %s order by m.id desc",
+                         (user_id, user_id)).fetchall()
+        return {"user": user, "trips": trips, "vehicles": vehicles,
+                "matches": [_match_view(c, r["id"]) for r in mids]}
+
+
+def list_vehicles(owner_id=None, active=True, limit=100, offset=0):
+    with db.conn() as c:
+        return [_out(r) for r in c.execute("select * from vehicles where (%s::int is null or owner_id = %s)"
+                    " and (%s::boolean is null or active = %s) order by id limit %s offset %s",
+                    (owner_id, owner_id, active, active, limit, offset))]
 
 
 # ---------------------------------------------------------------- read models
@@ -550,7 +634,8 @@ def impact_summary() -> dict:
         trips = c.execute("select count(*) as n from match_members mm join matches m on m.id = mm.match_id"
                           " where m.status in ('proposed', 'confirmed') and mm.status <> 'cancelled'").fetchone()["n"]
     return {"matches": r["matches"], "trips": trips, "miles_avoided": round(r["miles"], 2),
-            "kg_co2_avoided": round(r["kg"], 2), "ev_share": round(float(r["ev"]), 2), "simulated": False}
+            "kg_co2_avoided": round(r["kg"], 2), "ev_share": round(float(r["ev"]), 2), "simulated": False,
+            "basis": "Projected savings for proposed and confirmed matches; not measured completed journeys"}
 
 
 def events(since_id: int = 0, limit: int = 200) -> dict:

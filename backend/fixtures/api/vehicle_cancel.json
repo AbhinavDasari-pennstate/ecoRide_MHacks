@@ -3,7 +3,7 @@
   "replans": [
     {
       "match_id": 1,
-      "status": "confirmed",
+      "status": "proposed",
       "diff": {
         "match_id": 1,
         "cause": "vehicle_cancelled",

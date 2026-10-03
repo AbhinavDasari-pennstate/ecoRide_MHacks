@@ -15,7 +15,7 @@
     "max_detour_mi": 2.0,
     "needs_vehicle": false,
     "status": "open",
-    "created_at": "2026-10-03T20:25:29.791266+00:00"
+    "created_at": "2026-10-03T21:11:21.613738+00:00"
   },
   "planning": "queued"
 }

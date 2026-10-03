@@ -1,6 +1,7 @@
 """Postgres access: one lazy connection pool, one transaction per `with conn() as c:`, plain SQL.
 Never print or log the URLs (they hold credentials)."""
 import json
+import hashlib
 import os
 import threading
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from psycopg_pool import ConnectionPool
 from app import config
 
 SCHEMA = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
+MIGRATIONS = SCHEMA.parent / "migrations"
 LOCK_KEY = 7337   # pg_advisory_xact_lock key: serializes planning runs and state changes
 
 _pool = None
@@ -24,8 +26,10 @@ _pool_lock = threading.Lock()
 def _url(direct: bool = False) -> str:
     if config.DATABASE_URL == "local":
         import pgserver  # dev only (requirements-dev.txt)
-        path = os.path.join(os.environ["LOCALAPPDATA"], "campus-rides-pg")
+        path = os.getenv("LOCAL_DATABASE_PATH") or str(Path(os.getenv("LOCALAPPDATA", Path.home() / ".local/share")) / "campus-rides-pg")
         return pgserver.get_server(path, cleanup_mode=None).get_uri()
+    if direct and not config.DATABASE_URL_DIRECT:
+        raise ValueError("Set DATABASE_URL_DIRECT to the direct Neon connection string before migrating")
     return config.DATABASE_URL_DIRECT if direct else config.DATABASE_URL
 
 
@@ -33,10 +37,11 @@ def pool() -> ConnectionPool:
     global _pool
     with _pool_lock:
         if _pool is None:
-            # prepare_threshold=None: Neon's pooled endpoint is PgBouncer in transaction mode,
-            # where server-side prepared statements break. check: Neon drops idle connections.
+            # Disable prepared statements for compatibility with pooled endpoints.
+            # Check connections on checkout because Neon can suspend idle computes.
             _pool = ConnectionPool(_url(), kwargs={"row_factory": dict_row, "prepare_threshold": None},
-                                   check=ConnectionPool.check_connection, min_size=1, max_size=10, open=True)
+                                   check=ConnectionPool.check_connection, min_size=0, max_size=10,
+                                   timeout=10, open=True)
     return _pool
 
 
@@ -45,9 +50,38 @@ def conn():
     return pool().connection()
 
 
-def apply_schema() -> None:
-    with psycopg.connect(_url(direct=True), autocommit=True) as c:
-        c.execute(SCHEMA.read_text())
+def close_pool() -> None:
+    global _pool
+    with _pool_lock:
+        if _pool is not None:
+            _pool.close()
+            _pool = None
+
+
+def apply_schema() -> list[str]:
+    """Bootstrap and upgrade atomically; never reset application data.
+
+    The original schema is the baseline. Append numbered migrations; do not edit
+    applied migrations. The checksums detect accidental changes on later deploys.
+    """
+    applied = []
+    with psycopg.connect(_url(direct=True), connect_timeout=10) as c:
+        lock(c)
+        c.execute(SCHEMA.read_text(encoding="utf-8"))
+        c.execute("create table if not exists schema_migrations (name text primary key,"
+                  " checksum text not null, applied_at timestamptz not null default now())")
+        for path in sorted(MIGRATIONS.glob("*.sql")):
+            sql = path.read_text(encoding="utf-8")
+            checksum = hashlib.sha256(sql.encode()).hexdigest()
+            row = c.execute("select checksum from schema_migrations where name = %s", (path.name,)).fetchone()
+            if row:
+                if row[0] != checksum:
+                    raise ValueError(f"Applied migration changed: {path.name}; add a new migration instead")
+                continue
+            c.execute(sql)
+            c.execute("insert into schema_migrations (name, checksum) values (%s, %s)", (path.name, checksum))
+            applied.append(path.name)
+    return applied
 
 
 def lock(c) -> None:
@@ -69,6 +103,9 @@ def J(obj) -> Jsonb:
 
 
 def event(c, kind: str, payload: dict) -> None:
+    # Every event writer uses the same transaction lock: IDs become visible in
+    # commit order, so a polling consumer cannot skip a late-committing lower ID.
+    lock(c)
     c.execute("insert into events (kind, payload) values (%s, %s)", (kind, J(payload)))
 
 

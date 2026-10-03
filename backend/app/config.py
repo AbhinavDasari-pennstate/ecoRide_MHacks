@@ -8,7 +8,9 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 # --- env (never print or log these) ---
 DATABASE_URL = os.getenv("DATABASE_URL", "local")          # "local" = embedded pgserver (dev only)
-DATABASE_URL_DIRECT = os.getenv("DATABASE_URL_DIRECT") or DATABASE_URL
+DATABASE_URL_DIRECT = os.getenv("DATABASE_URL_DIRECT", "")
+API_SERVICE_TOKEN = os.getenv("API_SERVICE_TOKEN", "")  # trusted server adapters only; never expose in browser JS
+CORS_ORIGINS = [s.strip() for s in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",") if s.strip()]
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 MAPS_SERVER_KEY = os.getenv("MAPS_SERVER_KEY", "")
 # Read at call time (config.PLANNER), so scripts can switch modes at runtime.
@@ -41,7 +43,7 @@ RENTAL_INCREMENT_HOURS = 0.5
 # --- emissions and prices (checked 2026-10-03, sources in SOURCES; a judge will ask) ---
 GAS_KG_CO2_PER_GALLON = 8.887
 BASELINE_KG_CO2_PER_MILE = 0.400
-GRID_KG_CO2_PER_KWH = 0.440   # 970.617 lb/MWh * 0.4536; ponytail: ignores RFCM's 4.2% line loss
+GRID_KG_CO2_PER_KWH = 0.440   # 970.617 lb/MWh * 0.45359237 / 1000, rounded; excludes transmission losses
 OWN_CAR_MPG = 22.2            # EPA average on-road car, so an own car matches the baseline per mile
 GAS_USD_PER_GALLON = 4.48     # ponytail: price snapshots, not live feeds
 ELECTRICITY_USD_PER_KWH = 0.2305
@@ -64,7 +66,18 @@ SOURCES = {
     "ROAD_FACTOR": ("ratio", "road miles per straight-line mile, used only when Maps is unavailable"),
 }
 
+SOURCE_URLS = {
+    "GAS_KG_CO2_PER_GALLON": "https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle",
+    "BASELINE_KG_CO2_PER_MILE": "https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle",
+    "OWN_CAR_MPG": "https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle",
+    "GRID_KG_CO2_PER_KWH": "https://www.epa.gov/egrid/summary-data",
+    "GAS_USD_PER_GALLON": "https://gasprices.aaa.com/?state=MI",
+    "ELECTRICITY_USD_PER_KWH": "https://www.eia.gov/electricity/monthly/epm_table_grapher.php?t=epmt_5_6_a",
+}
+
 
 def assumptions() -> dict:
     g = globals()
-    return {name: {"value": g[name], "unit": unit, "source": src} for name, (unit, src) in SOURCES.items()}
+    return {name: {"value": g[name], "unit": unit, "source": src,
+                   **({"url": SOURCE_URLS[name], "checked_on": "2026-10-03"} if name in SOURCE_URLS else {})}
+            for name, (unit, src) in SOURCES.items()}

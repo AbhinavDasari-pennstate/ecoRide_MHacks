@@ -1,7 +1,7 @@
 [
   {
     "id": 11,
-    "ts": "2026-10-03T20:25:29.966727+00:00",
+    "ts": "2026-10-03T21:11:21.878533+00:00",
     "trigger": "vehicle_cancelled",
     "planner": "deterministic",
     "tool_calls": [],
@@ -13,7 +13,7 @@
   },
   {
     "id": 10,
-    "ts": "2026-10-03T20:25:29.956892+00:00",
+    "ts": "2026-10-03T21:11:21.864358+00:00",
     "trigger": "manual_plan",
     "planner": "deterministic",
     "tool_calls": [],
@@ -31,7 +31,7 @@
   },
   {
     "id": 9,
-    "ts": "2026-10-03T20:25:29.950751+00:00",
+    "ts": "2026-10-03T21:11:21.856908+00:00",
     "trigger": "manual_plan",
     "planner": "deterministic",
     "tool_calls": [],
@@ -51,7 +51,7 @@
   },
   {
     "id": 8,
-    "ts": "2026-10-03T20:25:29.945156+00:00",
+    "ts": "2026-10-03T21:11:21.848719+00:00",
     "trigger": "manual_plan",
     "planner": "deterministic",
     "tool_calls": [],
@@ -70,7 +70,7 @@
   },
   {
     "id": 7,
-    "ts": "2026-10-03T20:25:29.938757+00:00",
+    "ts": "2026-10-03T21:11:21.840290+00:00",
     "trigger": "manual_plan",
     "planner": "deterministic",
     "tool_calls": [],
@@ -88,7 +88,7 @@
   },
   {
     "id": 6,
-    "ts": "2026-10-03T20:25:29.931766+00:00",
+    "ts": "2026-10-03T21:11:21.832367+00:00",
     "trigger": "manual_plan",
     "planner": "deterministic",
     "tool_calls": [],
@@ -106,7 +106,7 @@
   },
   {
     "id": 5,
-    "ts": "2026-10-03T20:25:29.925903+00:00",
+    "ts": "2026-10-03T21:11:21.823102+00:00",
     "trigger": "manual_plan",
     "planner": "deterministic",
     "tool_calls": [],
@@ -119,12 +119,12 @@
       ]
     ],
     "retries": 0,
-    "latency_ms": 0,
+    "latency_ms": 15,
     "fallback_used": false
   },
   {
     "id": 4,
-    "ts": "2026-10-03T20:25:29.916973+00:00",
+    "ts": "2026-10-03T21:11:21.813088+00:00",
     "trigger": "manual_plan",
     "planner": "deterministic",
     "tool_calls": [],
@@ -135,12 +135,12 @@
       []
     ],
     "retries": 0,
-    "latency_ms": 14,
+    "latency_ms": 0,
     "fallback_used": false
   },
   {
     "id": 3,
-    "ts": "2026-10-03T20:25:29.830396+00:00",
+    "ts": "2026-10-03T21:11:21.683155+00:00",
     "trigger": "trip_created",
     "planner": "deterministic",
     "tool_calls": [],
@@ -152,7 +152,7 @@
   },
   {
     "id": 2,
-    "ts": "2026-10-03T20:25:29.817403+00:00",
+    "ts": "2026-10-03T21:11:21.666997+00:00",
     "trigger": "trip_created",
     "planner": "deterministic",
     "tool_calls": [],
@@ -164,7 +164,7 @@
   },
   {
     "id": 1,
-    "ts": "2026-10-03T20:25:29.801588+00:00",
+    "ts": "2026-10-03T21:11:21.628846+00:00",
     "trigger": "trip_created",
     "planner": "deterministic",
     "tool_calls": [],
