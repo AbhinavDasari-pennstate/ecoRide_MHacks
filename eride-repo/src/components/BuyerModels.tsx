@@ -142,7 +142,7 @@ export function BuyerModels({
       <div className="buyer-model-actions">
         <button
           className="buyer-download"
-          onClick={() => download("eride-trip-features-scores.csv", toCsv(data.tripScores), "text/csv")}
+          onClick={() => download("ecaride-trip-features-scores.csv", toCsv(data.tripScores), "text/csv")}
         >
           <ArrowDownToLine size={16} /> Download features and scores <span>CSV</span>
         </button>

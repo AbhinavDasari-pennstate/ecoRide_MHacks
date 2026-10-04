@@ -32,7 +32,7 @@ export type BuyerDataset = Pick<
 export const Route = createFileRoute("/buyer")({
   head: () => ({
     meta: [
-      { title: "Data Portal | ERIDE" },
+      { title: "Data Portal | eCARide" },
       {
         name: "description",
         content: "Explore simulated driving patterns from one shared car and six drivers.",
@@ -106,7 +106,7 @@ function downloadSample(data: BuyerDataset) {
   );
   const link = document.createElement("a");
   link.href = url;
-  link.download = "eride-simulated-trips.json";
+  link.download = "ecaride-simulated-trips.json";
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -555,7 +555,7 @@ export function BuyerPortal({
         </div>
       </section>
       <footer className="buyer-footnote">
-        <span>ERIDE / Data Portal</span>
+        <span>eCARide / Data Portal</span>
         <p>For demonstration only. Flags use illustrative rules, not a validated safety score.</p>
         <span>{datasetSummary.dayCount} days · 1 vehicle</span>
       </footer>

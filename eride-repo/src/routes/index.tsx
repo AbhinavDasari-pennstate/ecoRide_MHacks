@@ -6,7 +6,7 @@ import { useCampusImpact, useSession } from "@/lib/account-api";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Book a trip | ERIDE" },
+      { title: "Book a trip | eCARide" },
       {
         name: "description",
         content:
@@ -141,7 +141,7 @@ export function Home() {
         )}
       </section>
       <footer className="ride-home-footer">
-        <span>ERIDE</span>
+        <span>eCARide</span>
         <p>Campus ride sharing</p>
         <span>Ann Arbor</span>
       </footer>

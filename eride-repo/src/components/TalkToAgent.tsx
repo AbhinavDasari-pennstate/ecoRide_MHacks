@@ -13,10 +13,10 @@ const WIDGET_SRC = "https://unpkg.com/@elevenlabs/convai-widget-embed";
  * system__caller_id is not here on purpose: ElevenLabs fills that in, and it is empty on the web.
  */
 export function agentVariables(user: SessionUser | null | undefined): Record<string, string> {
-  const generic = "Hi, this is Eco from ecoRide. Do you want to book a ride, or check on one?";
+  const generic = "Hi, this is Eco from eCARide. Do you want to book a ride, or check on one?";
   return {
     greeting: user
-      ? `Hi ${user.name}, this is Eco from ecoRide. Do you want to book a ride, or check on one?`
+      ? `Hi ${user.name}, this is Eco from eCARide. Do you want to book a ride, or check on one?`
       : generic,
     call_reason: "inbound",
     user_id: user ? String(user.id) : "",

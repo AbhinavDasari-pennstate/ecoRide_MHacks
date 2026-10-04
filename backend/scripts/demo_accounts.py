@@ -73,7 +73,7 @@ def create() -> list[dict]:
 
 
 def write_file(accounts: list[dict]) -> Path:
-    lines = ["ERIDE demo logins (local only, gitignored, demo passwords)",
+    lines = ["eCARide demo logins (local only, gitignored, demo passwords)",
              f"Sign in at {FRONTEND_URL}/login", ""]
     lines += [f"{a['name']:<8} user {a['user_id']:<3} {a['role']:<6} {a['email']:<20} {a['password']}"
               for a in accounts]

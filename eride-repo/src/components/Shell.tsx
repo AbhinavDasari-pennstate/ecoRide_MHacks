@@ -83,7 +83,7 @@ export function Shell() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="account-header">
-        <Link to="/" aria-label="ERIDE">
+        <Link to="/" aria-label="eCARide">
           <Wordmark />
         </Link>
         <nav aria-label="Main navigation">

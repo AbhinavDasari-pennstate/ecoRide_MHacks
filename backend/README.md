@@ -208,7 +208,8 @@ From `C:\Users\abhin\campus-rides\backend` in PowerShell:
    It does not initiate a call or send a text. Generated agent, MCP, and phone-number IDs are saved in `.env`;
    restart the API afterward so outbound calls use those IDs.
 
-5. Test in ElevenLabs dashboard -> Agents -> ecoRide -> Test, then call your Twilio number. Outbound calls use
+5. Test in ElevenLabs dashboard -> Agents -> ecoRide -> Test (the agent resource keeps its
+   original name so setup_voice.py can still find it), then call your Twilio number. Outbound calls use
    `POST /users/{id}/call {"reason": "confirm your seat"}`; texts use `POST /users/{id}/text {"match_id": 7}`.
    These API requests need `X-Api-Key: <API_TOKEN>`.
 

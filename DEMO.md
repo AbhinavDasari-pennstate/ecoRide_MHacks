@@ -1,4 +1,4 @@
-# ERIDE live demo
+# eCARide live demo
 
 Everything needed to run the phone demo on stage. Commands assume macOS or Linux and a
 `backend/.venv`. No credential ever appears in this file.
@@ -55,7 +55,7 @@ screens on the same page.
 
 Dial **+1 628-277-9064** from **+1 925-967-7432**.
 
-Eco answers with "Hi Alex, this is Eco from ecoRide. Do you want to book a ride, or check on
+Eco answers with "Hi Alex, this is Eco from eCARide. Do you want to book a ride, or check on
 one?" because the initiation webhook recognised the number before the call connected.
 
 What to say:
@@ -177,7 +177,7 @@ To turn email on, set all five of `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_P
 1. Go to <https://myaccount.google.com/security> and turn on two step verification. App
    passwords are not offered without it.
 2. Go to <https://myaccount.google.com/apppasswords>.
-3. Name it something like "eride demo" and create it. Google shows a 16 character password
+3. Name it something like "ecaride demo" and create it. Google shows a 16 character password
    once, in four groups of four.
 4. In `backend/.env` set `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`,
    `SMTP_USER=your.address@gmail.com`, `SMTP_PASSWORD` to those 16 characters with the spaces

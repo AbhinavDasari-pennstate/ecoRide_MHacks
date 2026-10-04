@@ -1,4 +1,4 @@
-# ERIDE
+# eCARide
 
 A campus ride-sharing app with email/password accounts, shared-trip booking, an owner workspace, and an approved-buyer data portal.
 
@@ -33,7 +33,7 @@ $env:BACKEND_URL='http://127.0.0.1:8001'
 npm.cmd run dev -- --host 127.0.0.1 --port 5174 --strictPort
 ```
 
-Open [ERIDE](http://127.0.0.1:5174). The isolated database lives in the ignored `.local/postgres` directory. API documentation is at [localhost:8001/docs](http://127.0.0.1:8001/docs).
+Open [eCARide](http://127.0.0.1:5174). The isolated database lives in the ignored `.local/postgres` directory. API documentation is at [localhost:8001/docs](http://127.0.0.1:8001/docs).
 
 ## Accounts and booking
 
@@ -57,7 +57,7 @@ The buyer dataset is explicitly simulated: six drivers, 48 trips, one shared car
 
 ## Installable app
 
-ERIDE includes a manifest, app icons, an install prompt where supported, iPhone/iPad install guidance, and an offline page. Booking and account operations require an internet connection. The service worker caches only public offline assets; it never caches account API data or private pages.
+eCARide includes a manifest, app icons, an install prompt where supported, iPhone/iPad install guidance, and an offline page. Booking and account operations require an internet connection. The service worker caches only public offline assets; it never caches account API data or private pages.
 
 For phone installation, deploy behind **HTTPS**. Route `/api/*` to FastAPI with the prefix removed, forward cookies, set `SESSION_COOKIE_SECURE=true`, and set `CORS_ORIGINS` to the exact frontend origin. The Vite proxy is for local development only. Configure a production reverse proxy to overwrite forwarded IP/protocol headers and trust only that proxy in Uvicorn. Do not forward a shared service token for browser requests. Keep `API_SERVICE_TOKEN`, database URLs, and API keys out of browser code and `VITE_*` settings.
 

@@ -143,7 +143,7 @@ def test_request_ride_plans_with_the_voice_planner(monkeypatch):
 def test_the_agent_never_introduces_itself_twice():
     """The greeting is already spoken as the first message, so the prompt must forbid a second one."""
     assert voice.FIRST_MESSAGE == "{{greeting}}"
-    assert "this is Eco from ecoRide" in voice.PLACEHOLDERS["greeting"]
+    assert "this is Eco from eCARide" in voice.PLACEHOLDERS["greeting"]
     prompt = voice.AGENT_PROMPT
     assert "has already been spoken" in prompt and "Do not greet them again" in prompt
     # A recognised caller is already identified, so the agent must not spend a tool round on it.

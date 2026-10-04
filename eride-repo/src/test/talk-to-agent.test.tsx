@@ -73,7 +73,7 @@ describe("Talk to Eco dynamic variables", () => {
     expect(Object.keys(variables).sort()).toEqual([...REQUIRED].sort());
     for (const name of REQUIRED) expect(variables[name]).toBeTypeOf("string");
     expect(variables["greeting"]).toBe(
-      "Hi, this is Eco from ecoRide. Do you want to book a ride, or check on one?",
+      "Hi, this is Eco from eCARide. Do you want to book a ride, or check on one?",
     );
     expect(variables["user_id"]).toBe("");
     expect(variables["user_name"]).toBe("");
@@ -90,7 +90,7 @@ describe("Talk to Eco dynamic variables", () => {
     expect(Object.keys(variables).sort()).toEqual([...REQUIRED].sort());
     for (const name of REQUIRED) expect(variables[name]).toBeTypeOf("string");
     expect(variables["greeting"]).toBe(
-      "Hi Alex, this is Eco from ecoRide. Do you want to book a ride, or check on one?",
+      "Hi Alex, this is Eco from eCARide. Do you want to book a ride, or check on one?",
     );
     expect(variables["user_id"]).toBe("1");
     expect(variables["user_name"]).toBe("Alex");
@@ -99,9 +99,9 @@ describe("Talk to Eco dynamic variables", () => {
   });
 
   it("matches the greeting the phone webhook sends for the same person", () => {
-    // voice.initiation builds "Hi {name}, this is Eco from ecoRide. Do you want to book a ride,
+    // voice.initiation builds "Hi {name}, this is Eco from eCARide. Do you want to book a ride,
     // or check on one?" so the web session and the phone call open the same way.
-    const phone = "Hi Alex, this is Eco from ecoRide. Do you want to book a ride, or check on one?";
+    const phone = "Hi Alex, this is Eco from eCARide. Do you want to book a ride, or check on one?";
     expect(agentVariables({ id: 1, name: "Alex" } as SessionUser)["greeting"]).toBe(phone);
   });
 
