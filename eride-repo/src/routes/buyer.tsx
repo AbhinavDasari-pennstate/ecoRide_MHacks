@@ -71,6 +71,7 @@ function BuyerPage() {
 }
 
 const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const sharedCarPhoto = "/images/cars/tesla-model-3.jpg";
 const date = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
@@ -166,9 +167,14 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
               <Zap size={12} /> Electric
             </span>
           </div>
-          <div className="buyer-car-visual" aria-hidden="true">
-            <div className="buyer-road" />
-            <CarFront strokeWidth={1} />
+          <div className="buyer-car-visual">
+            <div className="buyer-road" aria-hidden="true" />
+            <img
+              src={sharedCarPhoto}
+              alt="Blue Tesla Model 3 shared by the six drivers"
+              width={960}
+              height={567}
+            />
           </div>
           <div className="buyer-vehicle-bottom">
             <div>
@@ -177,6 +183,24 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
             </div>
             <span className="buyer-vehicle-id">EV / 001</span>
           </div>
+          <p className="buyer-photo-credit">
+            Photo:{" "}
+            <a
+              href="https://commons.wikimedia.org/wiki/File:2019_Tesla_Model_3_Long_Range_AWD_Front.jpg"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Vauxford
+            </a>{" "}
+            ·{" "}
+            <a
+              href="https://creativecommons.org/licenses/by-sa/4.0/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              CC BY-SA 4.0
+            </a>
+          </p>
         </div>
       </section>
 
@@ -259,7 +283,10 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
                   {item.trips} trips, {item.miles} miles. {value(item).toFixed(1)}{" "}
                   {metric === "braking" ? "hard brakes" : "estimated kilowatt hours"} per 100 miles.
                 </span>
-                <span className="buyer-driver-avatar">{item.id}</span>
+                <span className="buyer-driver-car">
+                  <img src={sharedCarPhoto} alt="" width={56} height={34} loading="lazy" />
+                  <span className="buyer-driver-avatar">{item.id}</span>
+                </span>
                 <span className="buyer-bar-body">
                   <span className="buyer-bar-meta">
                     <span>
