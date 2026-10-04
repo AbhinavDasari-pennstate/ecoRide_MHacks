@@ -262,6 +262,68 @@ def database() -> None:
     expected = {email: role for _, _, email, _, role in demo_accounts.ACCOUNTS}
     check("every demo login exists", logins == expected,
           f"{len(logins)} of {len(expected)}", "run demo_state.py to recreate the logins")
+    section("buyer models and the booking link")
+    from app import buyer_models as bm
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), db.conn() as c:
+            runs = {r["name"]: r for r in c.execute(
+                "select name, params, metrics from buyer_model_runs").fetchall()}
+            scores = c.execute("select count(*) as n, count(*) filter (where scored_by = 'unscored')"
+                               " as unscored from buyer_trip_scores").fetchone()
+            drivers = c.execute("select count(*) as n from buyer_driver_risk").fetchone()["n"]
+            leftover = c.execute("select count(*) as n from buyer_trips where source = 'booking'").fetchone()["n"]
+            index = c.execute("select 1 from pg_indexes where indexname = 'buyer_trips_one_per_match'").fetchone()
+            payouts = c.execute("select count(*) as n from owner_data_earnings").fetchone()["n"]
+    except Exception as e:
+        check("the model tables answer", False, type(e).__name__,
+              "run scripts/migrate.py then scripts/demo_state.py")
+        return
+    expected = {bm.ANOMALY, bm.RISK, bm.ENERGY}
+    check("the model fixture is loaded", set(runs) == expected,
+          f"{len(runs)} of {len(expected)} runs", "run demo_state.py to restore buyer_models.json")
+    check("every dataset trip is scored", scores["n"] == 48, f"{scores['n']} scored",
+          "run demo_state.py to restore the scores")
+    check("the driver risk table is filled", drivers == 6, f"{drivers} drivers",
+          "run demo_state.py")
+    if scores["unscored"]:
+        print(f"        note: {scores['unscored']} trips are recorded as unscored")
+
+    # Runtime scoring must work from the committed parameters, with no scikit-learn present.
+    sample = {name: 1.0 for name in set(bm.RISK_FEATURES + bm.ENERGY_FEATURES)}
+    risk_ok = bm.RISK in runs and bm.risk_probability(sample, runs[bm.RISK]["params"]) is not None
+    energy_ok = bm.ENERGY in runs and bm.predicted_kwh_per_mi(sample, runs[bm.ENERGY]["params"]) is not None
+    check("a new trip can be scored without scikit-learn", risk_ok and energy_ok,
+          "risk and energy score from the committed parameters",
+          "the fixture is missing its model parameters; rerun train_buyer_models.py")
+    forest, flagged = bm.anomaly_score({n: 1.0 for n in bm.ANOMALY_FEATURES})
+    print(f"        note: anomaly scoring is {'available' if forest is not None else 'unavailable'}"
+          f"{'' if forest is not None else ', so new trips record as unscored for anomaly'}"
+          f" (backend/models/{bm.FOREST_FILE.name})")
+    check("the booking link cannot double insert", index is not None,
+          "unique index on buyer_trips.match_id present", "run scripts/migrate.py")
+    check("no leftover telemetry from an earlier run", leftover == 0 and payouts == 0,
+          f"{leftover} booking trips, {payouts} payouts", "run demo_state.py")
+
+    buyer = next((a for a in demo_accounts.ACCOUNTS if a[4] == "buyer"), None)
+    body, status = {}, 0
+    if buyer:
+        try:
+            session = httpx.Client(base_url=API, timeout=20.0)
+            session.post("/auth/login", json={"email": buyer[2], "password": buyer[3]})
+            response = session.get("/buyer/insights")
+            status = response.status_code
+            body = response.json() if status == 200 else {}
+        except Exception:
+            status = 0
+    check("the buyer insights endpoint answers", status == 200, f"HTTP {status or 'no answer'}",
+          "the buyer login or the endpoint is not working; run demo_state.py and restart the backend")
+    check("it is labelled simulated and unvalidated", body.get("simulated") is True
+          and body.get("validated") is False, fix="the honesty labels must be present")
+    check("it reports the live booking count", "liveBookingTrips" in body,
+          f"liveBookingTrips={body.get('liveBookingTrips')}")
+    print(f"        note: the demo payout is ${config.DEMO_DATA_PAYOUT_CENTS / 100:.2f}"
+          f" per confirmed ride, demo numbers only")
+
     section("email")
     from app import notify
     if notify.email_configured():
