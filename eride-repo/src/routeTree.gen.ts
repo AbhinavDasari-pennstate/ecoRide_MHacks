@@ -10,11 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as BuyerRouteImport } from './routes/buyer'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as OwnerRouteImport } from './routes/owner'
 import { Route as ProfileRouteImport } from './routes/profile'
-import { Route as SignupRouteImport } from './routes/signup'
 import { Route as TripStepRouteImport } from './routes/trip.$step'
 
 const IndexRoute = IndexRouteImport.update({
@@ -22,29 +18,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BuyerRoute = BuyerRouteImport.update({
-  id: '/buyer',
-  path: '/buyer',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OwnerRoute = OwnerRouteImport.update({
-  id: '/owner',
-  path: '/owner',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignupRoute = SignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TripStepRoute = TripStepRouteImport.update({
@@ -55,69 +31,31 @@ const TripStepRoute = TripStepRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/buyer': typeof BuyerRoute
-  '/login': typeof LoginRoute
-  '/owner': typeof OwnerRoute
   '/profile': typeof ProfileRoute
-  '/signup': typeof SignupRoute
   '/trip/$step': typeof TripStepRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/buyer': typeof BuyerRoute
-  '/login': typeof LoginRoute
-  '/owner': typeof OwnerRoute
   '/profile': typeof ProfileRoute
-  '/signup': typeof SignupRoute
   '/trip/$step': typeof TripStepRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/buyer': typeof BuyerRoute
-  '/login': typeof LoginRoute
-  '/owner': typeof OwnerRoute
   '/profile': typeof ProfileRoute
-  '/signup': typeof SignupRoute
   '/trip/$step': typeof TripStepRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/buyer'
-    | '/login'
-    | '/owner'
-    | '/profile'
-    | '/signup'
-    | '/trip/$step'
+  fullPaths: '/' | '/profile' | '/trip/$step'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/buyer'
-    | '/login'
-    | '/owner'
-    | '/profile'
-    | '/signup'
-    | '/trip/$step'
-  id:
-    | '__root__'
-    | '/'
-    | '/buyer'
-    | '/login'
-    | '/owner'
-    | '/profile'
-    | '/signup'
-    | '/trip/$step'
+  to: '/' | '/profile' | '/trip/$step'
+  id: '__root__' | '/' | '/profile' | '/trip/$step'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  BuyerRoute: typeof BuyerRoute
-  LoginRoute: typeof LoginRoute
-  OwnerRoute: typeof OwnerRoute
   ProfileRoute: typeof ProfileRoute
-  SignupRoute: typeof SignupRoute
   TripStepRoute: typeof TripStepRoute
 }
 
@@ -130,39 +68,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/buyer': {
-      id: '/buyer'
-      path: '/buyer'
-      fullPath: '/buyer'
-      preLoaderRoute: typeof BuyerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/owner': {
-      id: '/owner'
-      path: '/owner'
-      fullPath: '/owner'
-      preLoaderRoute: typeof OwnerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/profile': {
       id: '/profile'
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/signup': {
-      id: '/signup'
-      path: '/signup'
-      fullPath: '/signup'
-      preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/trip/$step': {
@@ -177,11 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  BuyerRoute: BuyerRoute,
-  LoginRoute: LoginRoute,
-  OwnerRoute: OwnerRoute,
   ProfileRoute: ProfileRoute,
-  SignupRoute: SignupRoute,
   TripStepRoute: TripStepRoute,
 }
 export const routeTree = rootRouteImport

@@ -1,9 +1,0 @@
-{
-  "matches": 1,
-  "trips": 3,
-  "miles_avoided": 9.9,
-  "kg_co2_avoided": 7.31,
-  "ev_share": 1.0,
-  "simulated": false,
-  "basis": "Projected savings for proposed and confirmed matches; not measured completed journeys"
-}
