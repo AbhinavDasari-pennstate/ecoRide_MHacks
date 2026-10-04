@@ -238,6 +238,13 @@ def test_web_demo_bootstrap_is_additive_and_repeatable(database):
         assert c.execute("select count(*) as n from vehicles").fetchone()["n"] == 8
     apply.cancel_vehicle(first["vehicles"][0]["id"])
     assert apply.demo_bootstrap()["vehicles"][0]["active"] is False
+    apply.demo_restart()
+    # Every demo car is back and bookable on any day, e.g. a weekday night three days out.
+    night = apply._ts(first["window_start"]).replace(hour=3) + timedelta(days=3)
+    with db.conn() as c:
+        rows = c.execute("select active, avail_start <= %s and avail_end >= %s as open from vehicles where id = any(%s)",
+                         (night, night, [v["id"] for v in first["vehicles"]])).fetchall()
+    assert rows and all(r["active"] and r["open"] for r in rows)
 
 
 def test_web_demo_survives_reload_and_restart_preserves_other_accounts(database):

@@ -3,8 +3,6 @@ LookupError -> 404, ValueError -> 422. Planning after POST /trips runs as a back
 the other state changes replan synchronously inside apply and return the diff."""
 from datetime import datetime
 from contextlib import asynccontextmanager
-import json
-from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
@@ -322,5 +320,4 @@ def retry_trip_plan(trip_id: int, actor=Depends(auth.principal)):
 @app.get("/buyer/dataset")
 def buyer_dataset(actor=Depends(auth.require_user)):
     auth.require_role(actor, "buyer")
-    path = Path(__file__).resolve().parents[1] / "fixtures" / "buyer_dataset.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    return apply.buyer_dataset()

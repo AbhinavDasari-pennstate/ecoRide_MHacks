@@ -2,6 +2,7 @@
 Ctx (distances from Maps) -> planner draft (Gemini or fallback, completed and validated) ->
 code computes route, price, impact -> one transaction writes matches, members, bookings, events.
 Everything returned is JSON-ready (datetimes as ISO strings)."""
+import math
 import threading
 import time
 from datetime import datetime, timezone
@@ -653,7 +654,7 @@ def agent_runs(limit: int = 50) -> list[dict]:
 # Provisioning is additive; restarting cancels demo trips and retains their history.
 def demo_bootstrap() -> dict:
     from scripts import seed
-    sat = seed.saturday()
+    avail_start, avail_end = seed.availability()
     users, vehicles = [], []
     with db.conn() as c:
         db.lock(c)
@@ -667,7 +668,7 @@ def demo_bootstrap() -> dict:
                 c.execute("insert into user_identities(provider, subject, user_id) values ('eride-demo',%s,%s)",
                           (alias, row["id"]))
             users.append({**_out(row), "alias": alias})
-        for owner, model, fuel, eff, rng, cents, (t0, t1) in seed.VEHICLES:
+        for owner, model, fuel, eff, rng, cents in seed.VEHICLES:
             u = users[owner - 1]
             row = c.execute("select * from vehicles where owner_id = %s and make_model = %s order by id limit 1",
                             (u["id"], model)).fetchone()
@@ -676,7 +677,7 @@ def demo_bootstrap() -> dict:
                                 "price_per_hour_cents, lat, lng, avail_start, avail_end, efficiency_source)"
                                 " values (%s,%s,%s,5,%s,%s,%s,%s,%s,%s,%s,%s) returning *",
                                 (u["id"], model, fuel, rng, eff, cents, u["home_lat"], u["home_lng"],
-                                 seed._utc(sat,t0), seed._utc(sat,t1), seed.VEHICLE_SOURCES[model])).fetchone()
+                                 avail_start, avail_end, seed.VEHICLE_SOURCES[model])).fetchone()
             vehicles.append(_out(row))
     start, end = seed.scenario_window()
     return {"users": users, "vehicles": vehicles, "destination": seed.MEIJER,
@@ -725,10 +726,9 @@ def demo_restart() -> dict:
         c.execute("update match_members set status = 'cancelled' where match_id = any(%s::int[])", (mids,))
         c.execute("update matches set status = 'cancelled', updated_at = now() where id = any(%s::int[])", (mids,))
         c.execute("update trips set status = 'cancelled' where id = any(%s::int[])", (tids,))
-        for v, spec in zip(meta["vehicles"], seed.VEHICLES):
-            t0, t1 = spec[-1]
-            c.execute("update vehicles set active = true, avail_start = %s, avail_end = %s where id = %s",
-                      (seed._utc(seed.saturday(),t0), seed._utc(seed.saturday(),t1), v["id"]))
+        avail_start, avail_end = seed.availability()
+        c.execute("update vehicles set active = true, avail_start = %s, avail_end = %s where id = any(%s::int[])",
+                  (avail_start, avail_end, [v["id"] for v in meta["vehicles"]]))
         db.event(c, "demo_restarted", {"trip_ids": tids, "match_ids": mids})
     return {"ok": True}
 
@@ -745,3 +745,55 @@ def select_vehicle(match_id: int, vehicle_id: int) -> dict:
     if not result.get("valid", True):
         raise ValueError("; ".join(result["errors"]))
     return get_match(match_id)
+
+
+# ---------------------------------------------------------------- buyer dataset
+
+BUYER_VEHICLE = "Tesla Model 3"   # the dataset simulates one shared car
+EVENT_LABELS = {"hard_brake": "Hard braking", "rapid_acceleration": "Rapid acceleration", "sharp_turn": "Sharp turn"}
+
+
+def _r2(x: float) -> float:
+    """JS Math.round(x * 100) / 100, so summaries match the frontend's original numbers."""
+    return math.floor(x * 100 + 0.5) / 100
+
+
+def _iso_ms(t: datetime) -> str:
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") + f"{t.microsecond // 1000:03d}Z"
+
+
+def buyer_dataset() -> dict:
+    """buyer_trips / buyer_events in the shape of the frontend's BuyerDataset; summaries derived here."""
+    with db.conn() as c:
+        trip_rows = c.execute("select * from buyer_trips order by started_at desc").fetchall()
+        event_rows = c.execute("select * from buyer_events order by trip_id, offset_seconds").fetchall()
+    events_by_trip: dict[str, list] = {}
+    for e in event_rows:
+        events_by_trip.setdefault(e["trip_id"], []).append({
+            "id": e["id"], "tripId": e["trip_id"], "driverId": e["driver_id"], "type": e["type"],
+            "timestamp": _iso_ms(e["at"]), "offsetSeconds": e["offset_seconds"], "severity": e["severity"],
+            "detail": e["detail"], "value": e["value"], "unit": e["unit"], "threshold": e["threshold"]})
+    trips = [{"id": t["id"], "driverId": t["driver_id"], "startedAt": _iso_ms(t["started_at"]), "miles": t["miles"],
+              "durationMinutes": t["duration_minutes"], "estimatedEnergyKwh": t["estimated_energy_kwh"],
+              "events": events_by_trip.get(t["id"], [])} for t in trip_rows]
+    events = sorted((e for t in trips for e in t["events"]), key=lambda e: e["timestamp"], reverse=True)
+
+    drivers = []
+    for driver_id in sorted({t["driverId"] for t in trips}):
+        mine = [t for t in trips if t["driverId"] == driver_id]
+        miles = sum(t["miles"] for t in mine)
+        evs = [e for t in mine for e in t["events"]]
+        hard = sum(e["type"] == "hard_brake" for e in evs)
+        drivers.append({"id": driver_id, "trips": len(mine), "miles": _r2(miles), "hardBrakes": hard,
+                        "rapidAccelerations": sum(e["type"] == "rapid_acceleration" for e in evs),
+                        "events": len(evs),
+                        "hardBrakesPer100Miles": _r2(hard / miles * 100) if miles else 0,
+                        "energyPer100Miles": _r2(sum(t["estimatedEnergyKwh"] for t in mine) / miles * 100) if miles else 0})
+
+    dates = sorted({t["startedAt"][:10] for t in trips})
+    summary = {"vehicle": BUYER_VEHICLE, "driverCount": len(drivers), "tripCount": len(trips),
+               "dayCount": len(dates), "miles": _r2(sum(t["miles"] for t in trips)), "eventCount": len(events),
+               "estimatedEnergyKwh": _r2(sum(t["estimatedEnergyKwh"] for t in trips)),
+               "startDate": dates[0] if dates else None, "endDate": dates[-1] if dates else None}
+    return {"datasetSummary": summary, "demoTrips": trips, "driverSummaries": drivers,
+            "drivingEvents": events, "eventLabels": EVENT_LABELS}

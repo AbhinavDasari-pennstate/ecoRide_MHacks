@@ -1,5 +1,6 @@
 """Account sessions and authorization exercised against isolated PostgreSQL."""
 import hashlib
+import json
 from fastapi.testclient import TestClient
 import pytest
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -8,6 +9,7 @@ from app import apply, config, db
 from app.main import app
 from test_database import database, postgres, trip
 from scripts.grant_buyer import grant
+from scripts.load_buyer_dataset import FIXTURE
 
 
 PASSWORD = " spaces stay here "
@@ -128,7 +130,7 @@ def test_login_throttled_and_buyer_requires_grant(database):
         assert client.get("/auth/me").json()["user"]["role"] == "buyer"
         dataset = client.get("/buyer/dataset")
         assert dataset.status_code == 200
-        assert set(dataset.json()) == {"datasetSummary", "demoTrips", "drivingEvents", "driverSummaries", "eventLabels"}
+        assert dataset.json() == json.loads(FIXTURE.read_text(encoding="utf-8"))   # served from buyer_* tables
         assert dataset.headers["cache-control"] == "no-store"
         assert client.post("/trips", json={"role": "passenger", **database["destination"], "window_start": database["window_start"].isoformat(), "window_end": database["window_end"].isoformat()}).status_code == 403
         client.post("/auth/logout")

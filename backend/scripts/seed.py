@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import config, core, db, maps  # noqa: E402
+from scripts.load_buyer_dataset import load as load_buyer_dataset  # noqa: E402
 
 TZ = ZoneInfo(config.TIMEZONE)
 # Meijer #64; OpenStreetMap building coords, used when geocoding is unavailable
@@ -25,13 +26,13 @@ USERS = [
     ("Diego", ["owner"], 42.2620, -83.7180, 4.6),        # RAV4
     ("Riley", ["owner"], 42.2650, -83.7500, 4.7),        # Leaf
 ]
-# (owner_id, make_model, fuel, efficiency kWh/mi or mpg, range_mi, cents/hour, local avail hours); parked at the
+# (owner_id, make_model, fuel, efficiency kWh/mi or mpg, range_mi, cents/hour); available every day, parked at the
 # owner's home. Specs: fueleconomy.gov (2026 Model 3 RWD, 2025 Leaf S 40 kWh, 2025 Civic 2.0L, 2025 RAV4 2.5L FWD)
 VEHICLES = [
-    (4, "Tesla Model 3", "ev", 0.243, 321, 800, (time(13), time(17))),
-    (5, "Honda Civic", "gas", 36, 446, 700, (time(8), time(22))),
-    (6, "Toyota RAV4", "gas", 30, 435, 1000, (time(8), time(22))),
-    (7, "Nissan Leaf", "ev", 0.304, 149, 900, (time(13, 30), time(17))),
+    (4, "Tesla Model 3", "ev", 0.243, 321, 800),
+    (5, "Honda Civic", "gas", 36, 446, 700),
+    (6, "Toyota RAV4", "gas", 30, 435, 1000),
+    (7, "Nissan Leaf", "ev", 0.304, 149, 900),
 ]
 VEHICLE_SOURCES = {
     "Tesla Model 3": "fueleconomy.gov vehicle 50251: 2026 Model 3 Standard RWD, 24.3033 kWh/100mi rounded to 0.243 kWh/mi, 321 mi range; https://www.fueleconomy.gov/ws/rest/vehicle/50251",
@@ -49,6 +50,13 @@ def saturday() -> date:
 
 def _utc(d: date, t: time) -> datetime:
     return datetime.combine(d, t, TZ).astimezone(timezone.utc)
+
+
+def availability() -> tuple[datetime, datetime]:
+    """Demo cars are bookable all day, every day: from today's midnight (campus time) for a year."""
+    # ponytail: one long window, no daily hours; add a recurring schedule if owners need per-day hours
+    start = datetime.combine(datetime.now(TZ).date(), time(0), TZ)
+    return start.astimezone(timezone.utc), (start + timedelta(days=365)).astimezone(timezone.utc)
 
 
 def scenario_window() -> tuple[datetime, datetime]:
@@ -69,7 +77,7 @@ def reset(clear_cache: bool = False, *, allow_remote_reset: bool = False) -> dic
     if config.DATABASE_URL != "local" and not allow_remote_reset:
         raise ValueError("Seeding deletes app data. Use --reset-demo-db only on a disposable Neon demo branch.")
     db.apply_schema()
-    sat, dest = saturday(), destination()
+    dest = destination()
     tables = "users, vehicles, trips, matches, match_members, bookings, agent_runs, events, auth_rate_limits" + (", route_cache" if clear_cache else "")
     with db.conn() as c:
         db.lock(c)
@@ -77,16 +85,18 @@ def reset(clear_cache: bool = False, *, allow_remote_reset: bool = False) -> dic
         for n, (name, roles, lat, lng, rating) in enumerate(USERS, 1):
             c.execute("insert into users (name, phone, roles, home_lat, home_lng, verified, rating)"
                       " values (%s, %s, %s, %s, %s, true, %s)", (name, f"555-01{n:02d}", roles, lat, lng, rating))
-        for owner, model, fuel, eff, rng, cents, (t0, t1) in VEHICLES:
+        avail_start, avail_end = availability()
+        for owner, model, fuel, eff, rng, cents in VEHICLES:
             _, _, lat, lng, _ = USERS[owner - 1]
             c.execute("insert into vehicles (owner_id, make_model, fuel_type, seats, range_mi, efficiency,"
                       " price_per_hour_cents, lat, lng, avail_start, avail_end, efficiency_source) values (%s, %s, %s, 5, %s, %s, %s, %s, %s, %s, %s, %s)",
-                      (owner, model, fuel, rng, eff, cents, lat, lng, _utc(sat, t0), _utc(sat, t1), VEHICLE_SOURCES[model]))
+                      (owner, model, fuel, rng, eff, cents, lat, lng, avail_start, avail_end, VEHICLE_SOURCES[model]))
         if config.MAPS_SERVER_KEY:   # pre-warm route_cache so the demo doesn't wait on Google
             m = maps.Maps(c)
             pts = [(u[2], u[3]) for u in USERS] + [(dest["dest_lat"], dest["dest_lng"])]
             m.prefetch(pts)
             m.route(pts[0], [pts[1], pts[2]], pts[-1])    # Alex -> Maya -> Jordan -> Meijer
+    load_buyer_dataset()
     start, end = scenario_window()
     return {"users": {u[0]: n for n, u in enumerate(USERS, 1)},
             "vehicles": {v[1]: n for n, v in enumerate(VEHICLES, 1)},
