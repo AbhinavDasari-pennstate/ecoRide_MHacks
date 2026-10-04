@@ -2,6 +2,7 @@
 Ctx (distances from Maps) -> planner draft (Gemini or fallback, completed and validated) ->
 code computes route, price, impact -> one transaction writes matches, members, bookings, events.
 Everything returned is JSON-ready (datetimes as ISO strings)."""
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -74,6 +75,10 @@ def _clean(data: dict, fields) -> dict:
 
 def _geocode_dest(d: dict) -> None:
     if "dest_name" in d and ("dest_lat" not in d or "dest_lng" not in d):
+        known = next((p for k, p in config.KNOWN_PLACES.items() if k in d["dest_name"].lower()), None)
+        if known:
+            d.update(known)
+            return
         g = maps.geocode(d["dest_name"])
         if not g:
             raise ValueError(f"could not find {d['dest_name']!r}; send dest_lat and dest_lng")
@@ -425,10 +430,12 @@ def update_trip(trip_id: int, data: dict) -> dict:
     return {"trip": _out(row), "planning": planning}
 
 
-def cancel_trip(trip_id: int) -> dict:
+def cancel_trip(trip_id: int, user_id: int | None = None) -> dict:
     with db.conn() as c:
         db.lock(c)
         row = _get(c, "trips", trip_id)
+        if user_id is not None and row["user_id"] != user_id:
+            raise ValueError(f"trip {trip_id} belongs to someone else")
         if row["status"] == "cancelled":
             return {"trip": _out(row), "replans": []}
         mids = _active_matches(c, trip_id)
@@ -462,7 +469,46 @@ def _match_view(c, match_id) -> dict | None:
     booking = c.execute("select * from bookings where match_id = %s"
                         " order by status in ('requested', 'approved') desc, id desc limit 1", (match_id,)).fetchone()
     return {**_out(m), "members": members, "vehicle": _out(vehicle), "booking": _out(booking),
-            "costs": {k: m[k] for k in ("raw_cost_cents", "total_cost_cents", "cost_per_person_cents")}}
+            "costs": {k: m[k] for k in ("raw_cost_cents", "total_cost_cents", "cost_per_person_cents")},
+            "summary": _summary(c, m, members, vehicle, booking)}
+
+
+def _when(t: datetime) -> str:
+    """'Saturday at 1:45 PM', campus time."""
+    lt = t.astimezone(ZoneInfo(config.TIMEZONE))
+    return f"{lt:%A} at {lt:%I:%M %p}".replace(" at 0", " at ")
+
+
+def _join(names: list[str]) -> str:
+    return " and ".join(names) if len(names) < 3 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _summary(c, m, members, vehicle, booking) -> str:
+    """A sentence or three a voice agent can read out as is. Every number comes from the match row."""
+    if m["status"] == "cancelled":
+        return "This ride was cancelled."
+    dest = c.execute("select dest_name from trips where id = %s", (m["driver_trip_id"],)).fetchone()["dest_name"]
+    if m["status"] == "at_risk":
+        return f"The ride to {dest} is at risk: no car is free for it right now, so we're still looking."
+    live = [x for x in members if x["status"] != "cancelled"]
+    driver = next((x["name"] for x in live if x["role"] == "driver"), "The driver")
+    riders = [x["name"] for x in live if x["role"] != "driver"]
+    owner = vehicle and c.execute("select name from users where id = %s", (vehicle["owner_id"],)).fetchone()
+    car = (f"{owner['name']}'s " if owner else "a ") + vehicle["make_model"] + (" (electric)" if vehicle["fuel_type"] == "ev" else "") \
+        if vehicle else f"{driver}'s own car"
+    s = f"{driver} drives {_join(riders) + ' ' if riders else ''}to {dest} in {car}, leaving {_when(m['depart_time'])}."
+    if m["cost_per_person_cents"] is not None:
+        kg = (m["impact"] or {}).get("kg_co2_avoided")
+        s += f" It's ${m['cost_per_person_cents'] / 100:.2f} each" + (f" and saves {kg:.1f} kg of CO2 versus driving separately." if kg else ".")
+    pending = [x["name"] for x in live if x["status"] == "pending"]
+    waiting = [f"{_join(pending)} to accept"] if pending else []
+    if booking and booking["status"] == "requested":
+        waiting.append(f"{owner['name'] if owner else 'the owner'} to approve the car")
+    if m["status"] == "confirmed":
+        s += " Everyone has confirmed."
+    elif waiting:
+        s += f" Waiting on {', and '.join(waiting)}."
+    return s
 
 
 def accept(match_id: int, user_id: int) -> dict:
@@ -505,6 +551,46 @@ def decline_booking(booking_id: int) -> dict:
             db.event(c, "booking_declined", {"booking_id": booking_id, "match_id": b["match_id"]})
             live = _get(c, "matches", b["match_id"])["status"] != "cancelled"
     return {"booking": _out(b), "replan": _replan(b["match_id"], "booking_declined") if live else None}
+
+
+def approve_for_owner(user_id: int, match_id: int) -> dict:
+    """The car's owner approves the booking on a match (voice: "yes, they can take my car")."""
+    with db.conn() as c:
+        b = c.execute("select b.id from bookings b join vehicles v on v.id = b.vehicle_id where b.match_id = %s"
+                      " and v.owner_id = %s and b.status in ('requested', 'approved') order by b.id desc limit 1",
+                      (match_id, user_id)).fetchone()
+    if not b:
+        raise ValueError(f"user {user_id} has no car booking to approve on match {match_id}")
+    return approve_booking(b["id"])
+
+
+# ---------------------------------------------------------------- users (voice and texts find people by phone)
+
+def find_user(phone: str) -> dict:
+    digits = re.sub(r"\D", "", phone or "")
+    if len(digits) < 7:
+        raise ValueError("send a phone number")
+    with db.conn() as c:   # last 10 digits, so "+1 (734) 555-0101" matches "7345550101"
+        u = c.execute("select * from users where right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 10)"
+                      " = right(%s, 10)", (digits,)).fetchone()
+    if not u:
+        raise LookupError(f"no user with a phone number ending in {digits[-4:]}")
+    return _out(u)
+
+
+def user_rides(user_id: int) -> dict:
+    """The user's latest trips, each with its live match summary."""
+    with db.conn() as c:
+        u = _get(c, "users", user_id)
+        rides = []
+        for t in c.execute("select * from trips where user_id = %s order by id desc limit 5", (user_id,)).fetchall():
+            mids = _active_matches(c, t["id"])
+            v = _match_view(c, mids[-1]) if mids else None
+            summary = v["summary"] if v else (f"Your trip to {t['dest_name']} was cancelled." if t["status"] == "cancelled"
+                                              else f"Your trip to {t['dest_name']} {_when(t['window_start'])} is posted, with no match yet.")
+            rides.append({"trip_id": t["id"], "role": t["role"], "status": t["status"], "destination": t["dest_name"],
+                          "window_start": _out(t)["window_start"], "match_id": v["id"] if v else None, "summary": summary})
+    return {"user": _out(u), "rides": rides}
 
 
 # ---------------------------------------------------------------- vehicles

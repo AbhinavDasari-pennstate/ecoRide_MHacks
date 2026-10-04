@@ -68,6 +68,14 @@ Unknown id -> 404, bad input -> 422.
 | GET | `/impact` | totals over live matches: miles and kg CO2 avoided, EV share |
 | GET | `/events?since=` | event log after id `since` (poll it for a live feed) |
 | GET | `/agent-runs` | one row per planning run: planner, raw Gemini output, validator errors, retries, latency, fallback |
+| GET | `/users?phone=` | find a user by phone number (any format) |
+| GET | `/users/{id}/rides` | the user's latest trips, each with a spoken `summary` of its match |
+| POST | `/users/{id}/text` | `{match_id?}`: text them the ride summary (Twilio) |
+| POST | `/users/{id}/call` | `{reason}`: the voice agent phones them (ElevenLabs on the Twilio number) |
+| POST | `/mcp` | MCP server for the voice agent (Streamable HTTP); same rules as the REST API |
+
+`POST /trips?wait=true` plans inline and returns the matches in the same response. Every match carries a `summary`
+sentence (who drives whom, car, time, price, CO2, who we're waiting on) that voice and texts read out as is.
 
 The fixture plans use `{DEPART}` / `{DEPART_BAD}` tokens; substitute a real time before posting them.
 
@@ -85,6 +93,77 @@ The fixture plans use `{DEPART}` / `{DEPART_BAD}` tokens; substitute a real time
 **Vehicle rule:** among feasible vehicles, the lowest kg CO2 for the whole trip (including the deadhead to the driver).
 Vehicles within 0.1 kg of each other count as a tie, and the cheaper one wins. Constants and their sources are in
 `app/config.py` and travel with every match as `assumptions`.
+
+## Voice agent
+
+An ElevenLabs voice agent answers and places phone calls on a Twilio number. Its tools come from this server's MCP
+endpoint (`/mcp`, in `app/voice.py`): `find_caller`, `request_ride`, `my_rides`, `accept_ride`, `approve_car`,
+`cancel_ride`, `text_ride_details`, `call_rider`. The tools call the same code as the REST API, and every price, time
+and CO2 figure the agent says comes from code (`summary`), never from the voice LLM.
+
+You need an **ElevenLabs API key with Agents access**, your **Twilio Account SID and Auth Token**, and the
+**Twilio phone number** you want the agent to answer, in international format (`+1734...`). Twilio credentials alone
+do not provide the conversational agent. A public HTTPS tunnel lets ElevenLabs reach this backend.
+
+From `C:\Users\abhin\campus-rides\backend` in PowerShell:
+
+1. Prepare the local settings before starting the API. This preserves existing credentials and creates `API_TOKEN`;
+   it makes no network requests:
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\setup_voice.py --prepare
+   ```
+
+2. Fill in `ELEVENLABS_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER` in `backend/.env`.
+   Keep secrets in that gitignored file. Optional `ELEVENLABS_LLM` and `ELEVENLABS_VOICE_ID` customize the agent.
+   Callers must already exist in the users table. For fresh demo data only, set `DEMO_PHONES=Alex=+1734...,Maya=+1...`
+   and run `scripts/seed.py`; seeding resets the demo database.
+
+3. Start (or restart) the API, then start the tunnel in another terminal. Save the tunnel's HTTPS URL as `PUBLIC_URL`:
+
+   ```powershell
+   .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+   # In a second terminal:
+   ngrok http 8000
+   ```
+
+4. Check the local settings, then connect the providers:
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\setup_voice.py --check
+   .\.venv\Scripts\python.exe scripts\setup_voice.py
+   ```
+
+   `--check` only lists missing or invalid setting names; it never prints credentials, writes files, or contacts a
+   provider. Online setup first checks that the public MCP endpoint rejects anonymous requests and accepts the API
+   token, then registers its tools, creates/updates the agent, and attaches the explicitly selected Twilio number.
+   It does not initiate a call or send a text. Generated agent, MCP, and phone-number IDs are saved in `.env`;
+   restart the API afterward so outbound calls use those IDs.
+
+5. Test in ElevenLabs dashboard -> Agents -> ecoRide -> Test, then call your Twilio number. Outbound calls use
+   `POST /users/{id}/call {"reason": "confirm your seat"}`; texts use `POST /users/{id}/text {"match_id": 7}`.
+   These API requests need `X-Api-Key: <API_TOKEN>`.
+
+Use `--browser-only` on both check and setup to test ElevenLabs without Twilio. To buy a new 734 number on a paid
+Twilio account, leave `TWILIO_PHONE_NUMBER` empty and explicitly use `--buy-number` (Twilio bills for the number).
+Otherwise setup uses only the number you selected; it never chooses the first number in your account.
+
+Re-run online setup when `PUBLIC_URL` changes. An unchanged URL reuses the saved MCP ID. A changed URL creates a new
+registration and updates the agent; old registrations are retained because other agents may still use them.
+Deleted MCP registrations are recreated. If a saved agent was manually deleted, clear `ELEVENLABS_AGENT_ID` before
+rerunning. New MCP IDs are saved immediately so a later agent-update failure can be resumed without creating duplicates.
+
+Twilio trials restrict recipients and message content; see [Twilio's current trial limits](https://www.twilio.com/docs/usage/tutorials/how-to-use-your-free-trial-account).
+Trial templates (`TWILIO_SMS_TEMPLATE`) do not carry the ride's custom details. Custom US long-code texts require
+a paid account and A2P registration. Follow [ElevenLabs' Twilio integration guide](https://elevenlabs.io/docs/eleven-agents/phone-numbers/twilio-integration/native-integration)
+for supported phone-number types.
+
+The voice tests use simulated provider responses; real calls, speech recognition, and SMS delivery need a live test
+after credentials are configured. Connection failures report an uncertain outcome instead of automatically repeating
+a call or text. Unmatched riders are told to check their rides later; automatic match notifications are not wired up.
+Caller lookup is designed for known demo users and does not yet verify ownership of a spoken phone number.
+
+With `API_TOKEN` set, `/health`, `/docs`, and `/openapi.json` stay public; all other routes require the token.
 
 ## Before the demo
 

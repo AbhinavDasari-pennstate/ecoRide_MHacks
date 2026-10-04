@@ -11,9 +11,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import config, core, db, maps  # noqa: E402
 
 TZ = ZoneInfo(config.TIMEZONE)
-# Meijer #64; OpenStreetMap building coords, used when geocoding is unavailable
-MEIJER = {"dest_name": "Meijer (Ann Arbor-Saline Rd)", "dest_place_id": None,
-          "dest_lat": 42.2394, "dest_lng": -83.7660}
+MEIJER = dict(config.KNOWN_PLACES["meijer"])   # used when geocoding is unavailable
+# Real phones for the live voice/text demo, e.g. DEMO_PHONES=Alex=+17345551234,Maya=+12485556789 (the team's
+# own numbers; never sent to Gemini). Everyone else gets a fictional 555-01xx number.
+DEMO_PHONES = dict(p.strip().split("=", 1) for p in os.getenv("DEMO_PHONES", "").split(",") if "=" in p)
 
 # (name, roles, home lat, lng, rating); ids 1-7 in this order
 USERS = [
@@ -67,7 +68,8 @@ def reset(clear_cache: bool = False) -> dict:
         c.execute(f"truncate {tables} restart identity cascade")
         for n, (name, roles, lat, lng, rating) in enumerate(USERS, 1):
             c.execute("insert into users (name, phone, roles, home_lat, home_lng, verified, rating)"
-                      " values (%s, %s, %s, %s, %s, true, %s)", (name, f"555-01{n:02d}", roles, lat, lng, rating))
+                      " values (%s, %s, %s, %s, %s, true, %s)",
+                      (name, DEMO_PHONES.get(name, f"+1734555{100 + n:04d}"), roles, lat, lng, rating))
         for owner, model, fuel, eff, rng, cents, (t0, t1) in VEHICLES:
             _, _, lat, lng, _ = USERS[owner - 1]
             c.execute("insert into vehicles (owner_id, make_model, fuel_type, seats, range_mi, efficiency,"
