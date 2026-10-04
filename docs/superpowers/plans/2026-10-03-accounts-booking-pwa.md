@@ -1,6 +1,6 @@
 # Accounts, booking, and PWA implementation plan
 
-**Goal:** Connect ERIDE around a public Book a trip landing page, real email/password accounts, personal booking and owner interfaces, approved buyer access, and installation as a PWA.
+**Goal:** Connect eCARide around a public Book a trip landing page, real email/password accounts, personal booking and owner interfaces, approved buyer access, and installation as a PWA.
 
 **Architecture:** Keep React/TanStack Start and FastAPI/Postgres. The server owns identity, role checks, sessions, and all bookings. The browser uses same-origin cookie-authenticated API requests. Public offline assets are the only service-worker cache contents.
 

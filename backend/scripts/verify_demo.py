@@ -149,8 +149,50 @@ def main() -> int:
     check("the confirmed match still reads out correctly", "Alex drives" in final["summary"],
           final["summary"][:90])
 
+    print("\nthe confirmed ride reaches the data business")
+    buyer_email, buyer_password = passwords["Dana"]
+    buyer = login(buyer_email, buyer_password)
+    insights = buyer.get("/buyer/insights").json()
+    check("the buyer portal counts the live booking", insights.get("liveBookingTrips") == 1,
+          f"liveBookingTrips={insights.get('liveBookingTrips')}")
+    generated = [t for t in insights.get("tripScores", []) if t.get("matchId") == match_id]
+    check("the booking produced one telemetry trip", len(generated) == 1,
+          generated[0]["tripId"] if generated else "none")
+    if generated:
+        telemetry_trip = generated[0]
+        check("its distance is the planned route",
+              abs((telemetry_trip["miles"] or 0) - mine["impact"]["shared_miles"]) < 0.05,
+              f"{telemetry_trip['miles']} mi against {mine['impact']['shared_miles']} planned")
+        check("it is marked as coming from a booking", telemetry_trip["source"] == "booking",
+              telemetry_trip["source"])
+        check("it carries no name in its driver id",
+              telemetry_trip["driverId"].startswith("BK-") and "Alex" not in telemetry_trip["driverId"],
+              telemetry_trip["driverId"])
+        check("the models scored it", telemetry_trip["scoredBy"] == "runtime"
+              and telemetry_trip["riskProbability"] is not None,
+              f"scoredBy={telemetry_trip['scoredBy']}, risk={telemetry_trip['riskProbability']}")
+    dataset = buyer.get("/buyer/dataset").json()
+    check("the portal dataset grew by the live trip", dataset["datasetSummary"]["tripCount"] == 49,
+          f"{dataset['datasetSummary']['tripCount']} trips")
+    check("the models are labelled as unvalidated", insights.get("validated") is False
+          and "simulated" in insights.get("disclaimer", "").lower())
+
+    sam_board = clients["Sam"].get("/me/dashboard").json()
+    money = sam_board.get("data_earnings") or {}
+    check("Sam earned the demo data payout", money.get("trips") == 1 and money.get("cents", 0) > 0,
+          f"${money.get('cents', 0) / 100:.2f} over {money.get('trips')} ride(s)")
+    check("the earning is labelled as demo numbers", money.get("simulated") is True
+          and "no money moves" in money.get("basis", "").lower())
+
     print("\nresetting to demo state again")
     demo_state.main()
+    after_reset = login(buyer_email, buyer_password).get("/buyer/insights").json()
+    check("a reset clears the generated trips", after_reset.get("liveBookingTrips") == 0
+          and after_reset.get("voidedBookingTrips") == 0,
+          f"live={after_reset.get('liveBookingTrips')}, voided={after_reset.get('voidedBookingTrips')}")
+    check("the fixture trips and scores survive the reset",
+          len(after_reset.get("tripScores", [])) == 48 and len(after_reset.get("runs", [])) == 3,
+          f"{len(after_reset.get('tripScores', []))} scores, {len(after_reset.get('runs', []))} runs")
     after = login(*passwords["Alex"]).get("/me/dashboard").json()
     check("a reset leaves Alex clean and still able to sign in", after["trips"] == [],
           f"{len(after['trips'])} trips")

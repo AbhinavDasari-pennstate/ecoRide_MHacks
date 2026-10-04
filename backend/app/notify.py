@@ -155,7 +155,7 @@ def _audience(c, match: dict) -> list[dict]:
 
 # ---------------------------------------------------------------- email
 
-SUBJECT = "Your ecoRide trip is confirmed"
+SUBJECT = "Your eCARide trip is confirmed"
 
 
 def email_configured() -> bool:
@@ -169,7 +169,7 @@ def _body(match: dict) -> str:
     impact = match.get("impact") or {}
     vehicle = match.get("vehicle") or {}
     lines = [
-        "Your ecoRide trip is confirmed.",
+        "Your eCARide trip is confirmed.",
         "",
         match["summary"],
         "",
@@ -185,7 +185,7 @@ def _body(match: dict) -> str:
         if equivalents:
             lines.append(f"About {equivalents.get('tree_seedlings_10yr')} tree seedlings grown for ten"
                          f" years, or {equivalents.get('smartphone_charges')} smartphone charges.")
-    lines += ["", "These are projected estimates, not measured emissions.", "", "ecoRide, Ann Arbor"]
+    lines += ["", "These are projected estimates, not measured emissions.", "", "eCARide, Ann Arbor"]
     return "\n".join(lines)
 
 
@@ -277,7 +277,7 @@ def match_state_changed(match_id: int) -> list[dict]:
         if not notice:
             return []
         state = _match_state(match)
-        text = f"ecoRide: {NOTICES[notice]} {match['summary']}"
+        text = f"eCARide: {NOTICES[notice]} {match['summary']}"
         by_sms = texting_on()
         if by_sms and not texts_carry_details():
             if not _warned_about_template:

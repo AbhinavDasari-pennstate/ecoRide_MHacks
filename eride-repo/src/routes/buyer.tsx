@@ -18,7 +18,10 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { accountRequest, useSession } from "@/lib/account-api";
+import { accountRequest, useBuyerInsights, useSession } from "@/lib/account-api";
+import { BuyerModels } from "@/components/BuyerModels";
+
+import type { BuyerInsights } from "@/lib/account-api";
 
 type Sample = typeof import("@/lib/buyerData");
 export type BuyerDataset = Pick<
@@ -29,7 +32,7 @@ export type BuyerDataset = Pick<
 export const Route = createFileRoute("/buyer")({
   head: () => ({
     meta: [
-      { title: "Data Portal | ERIDE" },
+      { title: "Data Portal | eCARide" },
       {
         name: "description",
         content: "Explore simulated driving patterns from one shared car and six drivers.",
@@ -41,12 +44,14 @@ export const Route = createFileRoute("/buyer")({
 
 function BuyerPage() {
   const { data: session } = useSession();
+  const isBuyer = session?.user?.role === "buyer";
   const dataset = useQuery({
     queryKey: ["buyer", session?.user?.id],
     queryFn: () => accountRequest<BuyerDataset>("/buyer/dataset"),
-    enabled: session?.user?.role === "buyer",
+    enabled: isBuyer,
     retry: false,
   });
+  const insights = useBuyerInsights(isBuyer);
   if (dataset.isPending)
     return (
       <main className="account-page" role="status">
@@ -67,7 +72,7 @@ function BuyerPage() {
         </div>
       </main>
     );
-  return <BuyerPortal data={dataset.data} />;
+  return <BuyerPortal data={dataset.data} insights={insights.data} />;
 }
 
 const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -101,12 +106,18 @@ function downloadSample(data: BuyerDataset) {
   );
   const link = document.createElement("a");
   link.href = url;
-  link.download = "eride-simulated-trips.json";
+  link.download = "ecaride-simulated-trips.json";
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function BuyerPortal({ data }: { data: BuyerDataset }) {
+export function BuyerPortal({
+  data,
+  insights,
+}: {
+  data: BuyerDataset;
+  insights?: BuyerInsights | undefined;
+}) {
   const { datasetSummary, demoTrips, driverSummaries, drivingEvents, eventLabels } = data;
   const [metric, setMetric] = useState<"braking" | "energy">("braking");
   const [driver, setDriver] = useState<string | null>(null);
@@ -503,6 +514,22 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
         )}
       </section>
 
+      {insights && (
+        <BuyerModels
+          data={insights}
+          onSelectTrip={(tripId) => {
+            const trip = demoTrips.find((t) => t.id === tripId);
+            const event = trip?.events[0];
+            setDriver(null);
+            setEventType("all");
+            if (event) setSelectedEventId(event.id);
+            document
+              .querySelector('[aria-label="Trip details"]')
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
+      )}
+
       <section className="buyer-dataset-footer" aria-labelledby="dataset-contents">
         <div>
           <p className="buyer-eyebrow">Dataset contents</p>
@@ -528,7 +555,7 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
         </div>
       </section>
       <footer className="buyer-footnote">
-        <span>ERIDE / Data Portal</span>
+        <span>eCARide / Data Portal</span>
         <p>For demonstration only. Flags use illustrative rules, not a validated safety score.</p>
         <span>{datasetSummary.dayCount} days · 1 vehicle</span>
       </footer>

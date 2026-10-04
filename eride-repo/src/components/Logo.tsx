@@ -1,9 +1,9 @@
 import { cn } from "@/lib/utils";
 
 /**
- * ERIDE wordmark: the continuous-line car stays exactly as drawn and
- * stands in for the R, flanked by plain "E" and "IDE" lettering —
- * E + car + IDE. No ring, no circling strokes.
+ * eCARide wordmark: the continuous-line car stays exactly as drawn and
+ * stands in for CAR, flanked by plain "e" and "ide" lettering,
+ * so it reads e + car + ide. No ring, no circling strokes.
  */
 export function LogoMark({ className }: { className?: string }) {
   return (
@@ -46,16 +46,16 @@ export function LogoMark({ className }: { className?: string }) {
   );
 }
 
-/** Header brand: E + car + IDE, with the car standing in for the R. */
+/** Header brand: e + car + ide, with the car standing in for CAR. */
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={cn("inline-flex select-none items-center", className)} aria-label="ERIDE">
+    <span className={cn("inline-flex select-none items-center", className)} aria-label="eCARide">
       <span className="text-[1.9rem] font-extrabold leading-none tracking-tight text-forest">
-        E
+        e
       </span>
       <LogoMark className="mx-1 size-12 shrink-0" />
       <span className="text-[1.9rem] font-extrabold leading-none tracking-tight text-forest">
-        IDE
+        ide
       </span>
     </span>
   );

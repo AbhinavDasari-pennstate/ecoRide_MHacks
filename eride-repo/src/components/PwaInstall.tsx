@@ -65,7 +65,7 @@ export function PwaInstall() {
       const choice = await prompt.userChoice;
       if (choice.outcome === "accepted") setInstalled(true);
     } catch {
-      setError("Installation didn't open. Use your browser menu to install ERIDE.");
+      setError("Installation didn't open. Use your browser menu to install eCARide.");
     } finally {
       setPrompt(null);
       setInstalling(false);
@@ -75,7 +75,7 @@ export function PwaInstall() {
   if (!error && (installed || (!prompt && !ios))) return null;
 
   return (
-    <aside aria-label="Install ERIDE" className="mt-auto border-t border-border px-6 py-4 md:px-10">
+    <aside aria-label="Install eCARide" className="mt-auto border-t border-border px-6 py-4 md:px-10">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 text-sm">
         {error ? (
           <p role="status" className="text-muted-foreground">
@@ -84,7 +84,7 @@ export function PwaInstall() {
         ) : (
           <>
             <p className="flex items-center gap-2 text-muted-foreground">
-              <Smartphone size={17} aria-hidden="true" /> Add ERIDE to your device.
+              <Smartphone size={17} aria-hidden="true" /> Add eCARide to your device.
             </p>
             {prompt ? (
               <button
@@ -94,12 +94,12 @@ export function PwaInstall() {
                 className="inline-flex min-h-11 items-center gap-2 rounded-full bg-sand px-4 py-2 font-bold text-forest transition hover:bg-lime focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-forest disabled:opacity-60"
               >
                 <Download size={16} aria-hidden="true" />{" "}
-                {installing ? "Opening installer…" : "Install ERIDE"}
+                {installing ? "Opening installer…" : "Install eCARide"}
               </button>
             ) : (
               <details className="max-w-sm text-forest">
                 <summary className="min-h-11 cursor-pointer rounded-full bg-sand px-4 py-3 font-bold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-forest">
-                  Add ERIDE to your home screen
+                  Add eCARide to your home screen
                 </summary>
                 <p className="px-4 pt-3 text-sm leading-relaxed text-muted-foreground">
                   In Safari, tap Share, then Add to Home Screen, and tap Add.

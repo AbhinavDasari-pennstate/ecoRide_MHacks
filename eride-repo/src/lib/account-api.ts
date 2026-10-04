@@ -11,12 +11,20 @@ export type AccountVehicle = ApiVehicle & {
   lng: number;
   efficiency_source?: string;
 };
+export type DataEarnings = {
+  trips: number;
+  cents: number;
+  per_trip_cents: number;
+  simulated: boolean;
+  basis: string;
+};
 export type AccountDashboard = {
   user: { id: number; name: string; roles: string[] };
   trips: AccountTrip[];
   vehicles: AccountVehicle[];
   matches: ApiMatch[];
   impact: ImpactTotals;
+  data_earnings?: DataEarnings;
 };
 export type CampusImpact = ImpactTotals & { matches: number; ev_share: number };
 
@@ -99,6 +107,58 @@ export function useNotifications(enabled: boolean) {
     queryFn: () => accountRequest<{ notifications: RideNotification[] }>("/me/notifications"),
     enabled,
     refetchInterval: 5000,
+    retry: false,
+  });
+}
+
+export type ModelRun = {
+  name: string;
+  kind: string;
+  trained_at: string;
+  library: string;
+  dataset_rows: number;
+  random_seed: number;
+  features: string[];
+  metrics: Record<string, number | string>;
+  notes: string;
+};
+export type TripScore = {
+  tripId: string;
+  driverId: string;
+  startedAt: string;
+  miles: number;
+  features: Record<string, number | boolean>;
+  anomalyScore: number | null;
+  anomalyFlagged: boolean | null;
+  riskProbability: number | null;
+  predictedKwhPerMi: number | null;
+  actualKwhPerMi: number | null;
+  scoredBy: "fixture" | "runtime" | "unscored";
+  source?: "fixture" | "booking";
+  matchId?: number | null;
+};
+export type DriverRisk = {
+  driverId: string;
+  trips: number;
+  riskScore: number;
+  meanProbability: number;
+};
+export type BuyerInsights = {
+  simulated: boolean;
+  validated: boolean;
+  disclaimer: string;
+  runs: ModelRun[];
+  tripScores: TripScore[];
+  driverRisk: DriverRisk[];
+  liveBookingTrips: number;
+  voidedBookingTrips: number;
+};
+
+export function useBuyerInsights(enabled: boolean) {
+  return useQuery({
+    queryKey: ["buyer-insights"],
+    queryFn: () => accountRequest<BuyerInsights>("/buyer/insights"),
+    enabled,
     retry: false,
   });
 }

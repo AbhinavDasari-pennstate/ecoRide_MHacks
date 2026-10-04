@@ -26,7 +26,7 @@ def smtp(monkeypatch):
     """SMTP fully configured, with the transport captured instead of connected."""
     for key, value in {"SMTP_HOST": "smtp.example.test", "SMTP_PORT": "587",
                        "SMTP_USER": "demo@example.test", "SMTP_PASSWORD": "app-password",
-                       "EMAIL_FROM": "ecoRide <demo@example.test>"}.items():
+                       "EMAIL_FROM": "eCARide <demo@example.test>"}.items():
         monkeypatch.setattr(config, key, value)
     sent = []
 
@@ -86,7 +86,7 @@ def test_an_unconfigured_mailer_writes_to_the_outbox(database, outbox):
     match = confirmed(database)
     assert match["status"] == "confirmed"
     written = outbox.read_text(encoding="utf-8")
-    assert "Your ecoRide trip is confirmed." in written
+    assert "Your eCARide trip is confirmed." in written
     assert "alex@eride.demo" in written and "maya@eride.demo" in written
     assert [e["payload"]["delivered"] for e in emails()] == ["outbox"] * 3
     assert all(e["payload"]["notice"] == "confirmed" for e in emails())
@@ -109,7 +109,7 @@ def test_each_rider_is_emailed_once_however_often_it_confirms(database, outbox):
         notify.match_state_changed(match["id"])
         notify.email_confirmation(match["id"])
     assert len(emails()) == 3, "one per rider, not one per attempt"
-    assert outbox.read_text(encoding="utf-8").count("Subject: Your ecoRide trip is confirmed") == 3
+    assert outbox.read_text(encoding="utf-8").count("Subject: Your eCARide trip is confirmed") == 3
 
 
 def test_the_owner_is_not_emailed_only_the_travellers(database, outbox):

@@ -57,7 +57,7 @@ export function AuthForm({ signup, next }: { signup: boolean; next: string }) {
     <main className="auth-layout">
       <aside className="auth-story">
         <Leaf size={32} strokeWidth={1.5} />
-        <p className="account-eyebrow">ERIDE</p>
+        <p className="account-eyebrow">eCARide</p>
         <h2>
           Campus
           <br />
@@ -72,7 +72,7 @@ export function AuthForm({ signup, next }: { signup: boolean; next: string }) {
       </aside>
       <section className="auth-form-panel">
         <p className="account-eyebrow">{signup ? "Sign up" : "Welcome back"}</p>
-        <h1>{signup ? "Create your account" : "Sign in to ERIDE"}</h1>
+        <h1>{signup ? "Create your account" : "Sign in to eCARide"}</h1>
         <p className="account-muted">
           {signup ? "Use your email and a password." : "Sign in to access your account."}
         </p>
@@ -137,13 +137,13 @@ export function AuthForm({ signup, next }: { signup: boolean; next: string }) {
           </button>
         </form>
         <p className="auth-switch">
-          {signup ? "Already have an account?" : "New to ERIDE?"}{" "}
+          {signup ? "Already have an account?" : "New to eCARide?"}{" "}
           <Link to={signup ? "/login" : "/signup"} search={{ next }}>
             {signup ? "Sign in" : "Create an account"}
           </Link>
         </p>
         <p className="account-field-note mt-6">
-          Data buyers sign in with an account approved by the ERIDE team.
+          Data buyers sign in with an account approved by the eCARide team.
         </p>
       </section>
     </main>

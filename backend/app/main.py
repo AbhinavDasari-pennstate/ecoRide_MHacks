@@ -418,6 +418,13 @@ def buyer_dataset(actor=Depends(auth.require_user)):
     return apply.buyer_dataset()
 
 
+@app.get("/buyer/insights")
+def buyer_insights(actor=Depends(auth.require_user)):
+    """Buyer-only model outputs. Same auth as /buyer/dataset."""
+    auth.require_role(actor, "buyer")
+    return apply.buyer_insights()
+
+
 @app.get("/voice/agent")
 def voice_agent():
     """Public: how the web page reaches the voice agent (widget agent id, phone number). Empty = not set up."""

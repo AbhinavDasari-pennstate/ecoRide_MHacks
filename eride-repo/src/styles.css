@@ -1077,3 +1077,286 @@
     gap: 14px;
   }
 }
+
+/* 04 / Models: the buyer portal's model section. Same white, brown and green palette. */
+.buyer-models {
+  margin-top: 26px;
+}
+.buyer-model-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0 24px 18px;
+  padding: 12px 14px;
+  border: 1px solid #d9c6b4;
+  border-radius: 9px;
+  background: #f7ede6;
+  color: #98654c;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.buyer-model-banner svg {
+  flex: none;
+  margin-top: 2px;
+}
+.buyer-model-actions {
+  padding: 0 24px 18px;
+}
+.buyer-model-grid {
+  display: grid;
+  gap: 18px;
+  padding: 0 24px 22px;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+}
+.buyer-model-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+  background: var(--cream);
+}
+.buyer-model-wide {
+  grid-column: 1 / -1;
+}
+.buyer-model-card header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--forest);
+}
+.buyer-model-card h3 {
+  font-size: 0.98rem;
+  font-weight: 700;
+  margin: 0;
+}
+.buyer-model-stat {
+  margin: 12px 0 4px;
+  font-size: 0.86rem;
+  color: #626a41;
+}
+.buyer-model-stat strong {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--forest);
+}
+.buyer-model-sub,
+.buyer-model-meta {
+  font-size: 0.76rem;
+  line-height: 1.55;
+  color: #736d55;
+}
+.buyer-model-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.buyer-model-list li {
+  border-bottom: 1px solid var(--border);
+}
+.buyer-model-list button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 2px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.buyer-model-list button:hover {
+  background: var(--lime);
+}
+.buyer-model-trip {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--forest);
+}
+.buyer-model-score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: #98654c;
+}
+.buyer-risk-bars {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.buyer-risk-bars li {
+  display: grid;
+  grid-template-columns: 2.2rem 1fr 2.2rem auto;
+  align-items: center;
+  gap: 9px;
+}
+.buyer-risk-driver {
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--forest);
+}
+.buyer-risk-track {
+  height: 8px;
+  border-radius: 2px;
+  background: #f0eee5;
+  overflow: hidden;
+}
+.buyer-risk-fill {
+  display: block;
+  height: 100%;
+  background: var(--forest);
+}
+.buyer-risk-bars strong {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-size: 0.86rem;
+  color: var(--forest);
+}
+.buyer-model-how {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #626a41;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.buyer-model-note {
+  margin-top: 10px;
+  padding: 12px 13px;
+  border-left: 2px solid #999e7b;
+  background: var(--sand);
+  border-radius: 0 8px 8px 0;
+  font-size: 0.76rem;
+  line-height: 1.6;
+  color: #4d4a3c;
+}
+.buyer-model-note p + p {
+  margin-top: 8px;
+}
+.buyer-model-features {
+  color: #736d55;
+}
+.buyer-energy-plot {
+  display: grid;
+  grid-template-columns: 1.1rem 2.5rem 1fr;
+  grid-template-rows: 220px auto;
+  gap: 0 7px;
+  margin-top: 16px;
+}
+.buyer-energy-ylabel {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+  justify-self: center;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.72rem;
+  color: #736d55;
+  white-space: nowrap;
+}
+.buyer-energy-yticks {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 1px 0;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: #736d55;
+}
+.buyer-energy-chart {
+  grid-column: 3;
+  grid-row: 1;
+  position: relative;
+  height: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(var(--sand), var(--cream));
+  overflow: hidden;
+}
+/* y = x, bottom left to top right. preserveAspectRatio="none" stretches it to the box, and the
+   non-scaling stroke keeps the line one pixel wide whatever shape that box is. */
+.buyer-energy-ideal {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.buyer-energy-ideal line {
+  stroke: #999e7b;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.buyer-energy-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4px 0 0 -4px;
+  border-radius: 999px;
+  background: var(--forest);
+  border: 1px solid var(--cream);
+}
+.buyer-energy-xaxis {
+  grid-column: 3;
+  grid-row: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: #736d55;
+}
+.buyer-energy-xlabel {
+  font-size: 0.72rem;
+}
+.buyer-energy-legend {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: #736d55;
+}
+.buyer-model-footnote {
+  padding: 0 24px 22px;
+  font-size: 0.72rem;
+  color: #736d55;
+}
+
+.buyer-live-link {
+  margin: 0 24px 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--forest);
+  border-radius: 0 9px 9px 0;
+  background: var(--sand);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: #4d4a3c;
+}
+.buyer-live-link strong {
+  font-size: 1.05rem;
+  color: var(--forest);
+}
+.buyer-live-tag {
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--lime);
+  color: var(--lime-foreground);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

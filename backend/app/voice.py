@@ -17,8 +17,10 @@ _http = httpx.Client(timeout=15.0)   # tests swap this for an httpx.MockTranspor
 
 AGENT_NAME = "ecoRide"
 FIRST_MESSAGE = "{{greeting}}"
-AGENT_PROMPT = """You are Eco, the phone voice of ecoRide, a campus ride-sharing service in Ann Arbor. Students share rides
-to places like Meijer, and ecoRide picks the lowest-emission car for each group.
+AGENT_PROMPT = """You are Eco, the phone voice of eCARide, a campus ride-sharing service in Ann Arbor. Students share rides
+to places like Meijer, and eCARide picks the lowest-emission car for each group.
+
+Say the company name out loud as "ee-car-ride", three beats. Never spell it out letter by letter.
 
 Your opening line has already been spoken to the caller. Do not greet them again, do not say your name
 again, and do not say "this is Eco" again. Carry on from their answer.
@@ -53,7 +55,7 @@ Never repeat work
 
 Style: this is a phone call. Keep each reply to one or two short sentences and ask one question at a time."""
 # defaults for the variables above; outbound calls override them (call_user)
-PLACEHOLDERS = {"greeting": "Hi, this is Eco from ecoRide. Do you want to book a ride, or check on one?",
+PLACEHOLDERS = {"greeting": "Hi, this is Eco from eCARide. Do you want to book a ride, or check on one?",
                 "call_reason": "inbound", "user_id": "", "user_name": "", "ride_summary": ""}
 
 # ---------------------------------------------------------------- texts and calls
@@ -105,7 +107,7 @@ def text_ride(user_id: int, match_id: int | None = None) -> dict:
     if notify.already_sent("sms", "ride_details", user_id, subject, state):
         return {"to": user["name"], "sent": False, "reason": "already_sent",
                 "say": "I already texted you those details, so they should be on your phone."}
-    out = send_sms(user["phone"], f"ecoRide: {summary}")
+    out = send_sms(user["phone"], f"eCARide: {summary}")
     notify.record_sent("sms", "ride_details", user_id, subject, state, match_id=match_id)
     return {"to": user["name"], "sent": True, "say": "Sent. The details are on their way by text.", **out}
 
@@ -123,7 +125,7 @@ def call_user(user_id: int, reason: str) -> dict:
                        headers={"xi-api-key": config.ELEVENLABS_API_KEY},
                        json={"agent_id": config.ELEVENLABS_AGENT_ID, "agent_phone_number_id": config.ELEVENLABS_PHONE_NUMBER_ID,
                              "to_number": user["phone"], "conversation_initiation_client_data": {"dynamic_variables": {
-                                 "greeting": f"Hi {user['name']}, this is Eco from ecoRide, calling about your ride.",
+                                 "greeting": f"Hi {user['name']}, this is Eco from eCARide, calling about your ride.",
                                  "call_reason": reason, "user_id": str(user["id"]), "user_name": user["name"],
                                  "ride_summary": summary}}})
     except httpx.RequestError:
@@ -143,7 +145,7 @@ def initiation(caller_id: str | None) -> dict:
     try:
         user, summary = _latest(apply.find_user(caller_id or "")["id"])
         variables |= {"user_id": str(user["id"]), "user_name": user["name"], "ride_summary": summary,
-                      "greeting": f"Hi {user['name']}, this is Eco from ecoRide."
+                      "greeting": f"Hi {user['name']}, this is Eco from eCARide."
                                   " Do you want to book a ride, or check on one?"}
     except (LookupError, ValueError):
         pass
@@ -153,7 +155,7 @@ def initiation(caller_id: str | None) -> dict:
 # ---------------------------------------------------------------- MCP tools for the agent
 
 mcp = MCPServer(name="ecoRide", instructions=(
-    "Campus ride-sharing tools for ecoRide in Ann Arbor. Identify the person first (find_caller), then book, check, "
+    "Campus ride-sharing tools for eCARide in Ann Arbor. Identify the person first (find_caller), then book, check, "
     "accept or cancel rides. Read each 'say' text back as written: it holds the only correct prices, times and CO2."))
 
 

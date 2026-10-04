@@ -63,6 +63,9 @@ DEST_RADIUS_MI = 0.5          # passengers' destination must be this close to th
 MIN_WINDOW_OVERLAP_MIN = 30   # fallback: the group's windows must share at least this much time
 MAX_PICKUP_RADIUS_MI = 2.0    # fallback: passenger origin within this distance of the driver
 OWN_CAR_SEATS = 4             # capacity when the driver brings their own car
+# Demo numbers only. A clearly labelled payout to the car's owner for each confirmed ride whose
+# simulated telemetry reaches the data portal. No money moves.
+DEMO_DATA_PAYOUT_CENTS = int(os.getenv("DEMO_DATA_PAYOUT_CENTS", "85"))
 AVAIL_BUFFER_MIN = 15         # vehicle must stay free this long after the rental ends
 EV_RANGE_RESERVE = 0.20       # round trip must fit in (1 - reserve) * range
 CO2_TIE_KG = 0.1              # vehicles within this much CO2 are a tie, cheaper one wins

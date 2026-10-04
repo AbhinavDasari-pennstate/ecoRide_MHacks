@@ -56,10 +56,19 @@ def test_nothing_is_texted_unless_the_flag_is_on(database, monkeypatch):
     assert [n["payload"]["delivered"] for n in notices()] == ["in_app"] * 4
 
 
-def test_the_default_configuration_is_off():
-    import os
-    assert os.getenv("NOTIFY_ON_MATCH", "off").strip().lower() not in ("on", "true", "1", "yes")
+def test_the_default_configuration_is_off(monkeypatch):
+    """Asserts the shipped default, not whatever the developer's .env currently says."""
+    from pathlib import Path
+    source = Path(config.__file__).read_text(encoding="utf-8")
+    assert 'os.getenv("NOTIFY_ON_MATCH", "off")' in source
+    for value in ("off", "", "no", "0", "false"):
+        assert value.strip().lower() not in ("on", "true", "1", "yes")
+    monkeypatch.setattr(config, "NOTIFY_ON_MATCH", False)
     assert notify.texting_on() is False
+    monkeypatch.setattr(config, "NOTIFY_ON_MATCH", True)
+    for key in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"):
+        monkeypatch.setattr(config, key, "")
+    assert notify.texting_on() is False, "the flag alone must not be enough without Twilio"
 
 
 # ---------------------------------------------------------------- one notice per person per change

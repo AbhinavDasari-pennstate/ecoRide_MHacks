@@ -4,7 +4,7 @@ import { useAccountDashboard, useNotifications, useSession } from "@/lib/account
 import { AccountTripCard } from "@/components/AccountTripCard";
 import { Notifications } from "@/components/Notifications";
 export const Route = createFileRoute("/profile")({
-  head: () => ({ meta: [{ title: "My trips | ERIDE" }] }),
+  head: () => ({ meta: [{ title: "My trips | eCARide" }] }),
   component: Profile,
 });
 export function Profile() {

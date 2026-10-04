@@ -286,6 +286,37 @@ export function OwnerPage() {
         </div>
       ) : (
         <>
+          {dashboard.data?.data_earnings && (
+            <section className="account-panel" aria-labelledby="owner-data-earnings">
+              <p className="account-eyebrow">Data programme</p>
+              <h2 id="owner-data-earnings" className="mt-1 text-xl font-semibold">
+                Data earnings (demo numbers)
+              </h2>
+              <div className="mt-5 grid gap-5 sm:grid-cols-3">
+                <div>
+                  <p className="text-3xl font-semibold text-primary">
+                    ${(dashboard.data.data_earnings.cents / 100).toFixed(2)}
+                  </p>
+                  <p className="account-muted text-sm">earned so far</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-semibold">{dashboard.data.data_earnings.trips}</p>
+                  <p className="account-muted text-sm">confirmed rides counted</p>
+                </div>
+                <div>
+                  <p className="text-3xl font-semibold">
+                    ${(dashboard.data.data_earnings.per_trip_cents / 100).toFixed(2)}
+                  </p>
+                  <p className="account-muted text-sm">per confirmed ride</p>
+                </div>
+              </div>
+              <p className="account-muted mt-4 text-xs">
+                {dashboard.data.data_earnings.basis} Each confirmed ride sends one simulated
+                telemetry trip to the data portal. Nothing was measured by a device, and no payment
+                is processed.
+              </p>
+            </section>
+          )}
           <section>
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-xl font-semibold">Booking requests</h2>

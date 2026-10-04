@@ -31,6 +31,12 @@ def database(postgres, monkeypatch):
     monkeypatch.setattr(config, "API_SERVICE_TOKEN", "test-service-secret")
     monkeypatch.setattr(config, "PLANNER", "deterministic")
     monkeypatch.setattr(config, "EXPLAIN", "template")
+    # No test may reach a real provider. Confirming a match notifies, so without this a suite run
+    # with NOTIFY_ON_MATCH=on in .env posts live texts. Tests that exercise messaging set these back.
+    monkeypatch.setattr(config, "NOTIFY_ON_MATCH", False)
+    for key in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER",
+                "TWILIO_SMS_TEMPLATE", "ELEVENLABS_API_KEY"):
+        monkeypatch.setattr(config, key, "")
     maps._dist_mem.clear()
     maps._route_mem.clear()
     s = seed.reset(clear_cache=True)

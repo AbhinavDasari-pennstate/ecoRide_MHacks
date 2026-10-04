@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AuthForm, safeNext } from "@/components/AuthForm";
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>) => ({ next: safeNext(search["next"]) }),
-  head: () => ({ meta: [{ title: "Sign in | ERIDE" }] }),
+  head: () => ({ meta: [{ title: "Sign in | eCARide" }] }),
   component: Login,
 });
 function Login() {
