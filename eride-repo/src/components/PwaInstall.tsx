@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, Smartphone } from "lucide-react";
+import { Download } from "lucide-react";
 
 type InstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -83,9 +83,6 @@ export function PwaInstall() {
           </p>
         ) : (
           <>
-            <p className="flex items-center gap-2 text-muted-foreground">
-              <Smartphone size={17} aria-hidden="true" /> Your next ride, a tap away.
-            </p>
             {prompt ? (
               <button
                 type="button"

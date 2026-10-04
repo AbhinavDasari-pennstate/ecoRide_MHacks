@@ -4,17 +4,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   ArrowDownToLine,
   ArrowRight,
-  ArrowUpRight,
-  CarFront,
-  Check,
   ChevronRight,
-  CircleHelp,
   CornerUpRight,
-  Gauge,
-  MapPin,
   MoveDownRight,
-  SlidersHorizontal,
-  Sparkles,
   X,
   Zap,
 } from "lucide-react";
@@ -125,109 +117,36 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
   const value = (item: (typeof driverSummaries)[number]) =>
     metric === "braking" ? item.hardBrakesPer100Miles : item.energyPer100Miles;
   const maxValue = Math.max(1, ...driverSummaries.map(value));
-  const lowest = driverSummaries.reduce((best, current) =>
-    value(current) < value(best) ? current : best,
-  );
-  const highest = driverSummaries.reduce((best, current) =>
-    value(current) > value(best) ? current : best,
-  );
-
   return (
     <main className="buyer-page">
-      <div className="buyer-topline">
-        <div className="buyer-breadcrumb">
-          Data Portal <ChevronRight size={13} /> <span>Dataset 001</span>
-        </div>
-        <span className="buyer-simulated">
-          <span /> Simulated data
-        </span>
-      </div>
-
-      <section className="buyer-hero" aria-labelledby="buyer-title">
+      <header className="buyer-header">
         <div>
-          <p className="buyer-eyebrow">A closer look at shared mobility</p>
-          <h1 id="buyer-title">
-            One car.
-            <br />
-            <span>Different driving habits.</span>
-          </h1>
-          <p className="buyer-intro">
-            Every trip tells a story. Explore how six drivers use the same car, and see the moments
-            worth a closer look.
+          <h1>Data Portal</h1>
+          <p>
+            {datasetSummary.vehicle} · {datasetSummary.driverCount} drivers ·{" "}
+            {datasetSummary.tripCount} trips · {number.format(datasetSummary.miles)} miles ·{" "}
+            {datasetSummary.eventCount} flagged events
           </p>
-          <button className="buyer-download" onClick={() => downloadSample(data)}>
-            <ArrowDownToLine size={16} /> Download sample <span>JSON</span>
-          </button>
+          <p>
+            <strong>Simulated data</strong> · Energy estimates and illustrative event thresholds.{" "}
+            {date.formatRange(
+              new Date(`${datasetSummary.startDate}T12:00:00Z`),
+              new Date(`${datasetSummary.endDate}T12:00:00Z`),
+            )}{" "}
+            · Ann Arbor time.
+          </p>
         </div>
-        <div className="buyer-vehicle">
-          <div className="buyer-vehicle-top">
-            <span>THE SHARED CAR</span>
-            <span className="buyer-electric">
-              <Zap size={12} /> Electric
-            </span>
-          </div>
-          <div className="buyer-car-visual" aria-hidden="true">
-            <div className="buyer-road" />
-            <CarFront strokeWidth={1} />
-          </div>
-          <div className="buyer-vehicle-bottom">
-            <div>
-              <h2>{datasetSummary.vehicle}</h2>
-              <p>One vehicle. {datasetSummary.driverCount} perspectives.</p>
-            </div>
-            <span className="buyer-vehicle-id">EV / 001</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="buyer-stats" aria-label="Full dataset overview">
-        {[
-          { label: "Drivers", value: datasetSummary.driverCount, note: "Sharing one electric car" },
-          {
-            label: "Trips recorded",
-            value: datasetSummary.tripCount,
-            note: `Across ${datasetSummary.dayCount} days`,
-          },
-          {
-            label: "Miles explored",
-            value: number.format(datasetSummary.miles),
-            note: "Total simulated distance",
-          },
-          {
-            label: "Flagged events",
-            value: datasetSummary.eventCount,
-            note: "Moments to explore below",
-          },
-        ].map((stat) => (
-          <div className="buyer-stat" key={stat.label}>
-            <p>{stat.label}</p>
-            <strong>{stat.value}</strong>
-            <span>{stat.note}</span>
-          </div>
-        ))}
-      </section>
-
-      <div className="buyer-section-label">
-        <span>
-          <span className="buyer-section-dot" /> Driving patterns
-        </span>
-        <span>
-          {date.formatRange(
-            new Date(`${datasetSummary.startDate}T12:00:00Z`),
-            new Date(`${datasetSummary.endDate}T12:00:00Z`),
-          )}{" "}
-          · Ann Arbor time
-        </span>
-      </div>
+        <button className="buyer-download" onClick={() => downloadSample(data)}>
+          <ArrowDownToLine size={16} /> Download JSON
+        </button>
+      </header>
       <div className="buyer-analysis-grid">
         <section className="buyer-panel buyer-comparison" aria-labelledby="comparison-title">
           <div className="buyer-panel-heading">
             <div>
-              <p className="buyer-eyebrow">01 / Compare</p>
-              <h2 id="comparison-title">Same car, different drivers</h2>
-              <p>Select a driver to explore their events.</p>
+              <h2 id="comparison-title">Compare drivers</h2>
+              <p>Select a driver to filter events.</p>
             </div>
-            <SlidersHorizontal size={19} aria-hidden="true" />
           </div>
           <div className="buyer-metric-switch" aria-label="Comparison metric">
             <button aria-pressed={metric === "braking"} onClick={() => setMetric("braking")}>
@@ -265,11 +184,6 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
                     <span>
                       {item.trips} trips <span>· {number.format(item.miles)} mi</span>
                     </span>
-                    {item.id === lowest.id && (
-                      <span className="buyer-lowest">
-                        Lowest {metric === "braking" ? "rate" : "estimate"}
-                      </span>
-                    )}
                   </span>
                   <span className="buyer-bar-track">
                     <span
@@ -283,30 +197,16 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
               </button>
             ))}
           </div>
-          <div className="buyer-insight">
-            <Sparkles size={17} />
-            <p>
-              <strong>
-                {highest.id} has the highest{" "}
-                {metric === "braking" ? "braking-event rate" : "estimated energy use"}.
-              </strong>{" "}
-              {metric === "braking"
-                ? `${highest.hardBrakes} hard brakes over ${number.format(highest.miles)} miles. Select their row to see what happened.`
-                : "These are simulated estimates, not measurements from the vehicle."}
-            </p>
-          </div>
         </section>
 
         <section className="buyer-panel buyer-feed" aria-label="Flagged events">
           <div className="buyer-panel-heading">
             <div>
-              <p className="buyer-eyebrow">02 / Explore</p>
-              <h2>Moments worth a look</h2>
+              <h2>Flagged events</h2>
               <p>
                 {visibleEvents.length} events <span>· {driver ?? "All drivers"}</span>
               </p>
             </div>
-            <span className="buyer-event-count">{visibleEvents.length}</span>
           </div>
           <div className="buyer-feed-controls">
             <label className="buyer-select">
@@ -343,7 +243,6 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
           <div className="buyer-event-list">
             {visibleEvents.length === 0 && (
               <div className="buyer-empty">
-                <Check size={25} />
                 <h3>No matching events</h3>
                 <p>Try another event type or driver.</p>
                 <button
@@ -387,17 +286,13 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
               );
             })}
           </div>
-          <div className="buyer-feed-footer">
-            <CircleHelp size={14} /> Select an event to see the details below.
-          </div>
         </section>
       </div>
 
       <section className="buyer-panel buyer-detail" aria-label="Trip details">
         <div className="buyer-panel-heading">
           <div>
-            <p className="buyer-eyebrow">03 / Understand</p>
-            <h2>A closer look at the trip</h2>
+            <h2>Trip details</h2>
           </div>
           <span className="buyer-muted">{selectedTrip?.id ?? "No trip selected"}</span>
         </div>
@@ -441,14 +336,10 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
                 <span>Trip starts</span>
                 <span>{selectedTrip.durationMinutes} min · Trip ends</span>
               </div>
-              <p className="buyer-timeline-note">
-                Each dot is a flagged moment. Select one to see why.
-              </p>
             </div>
             <div className="buyer-reason" aria-live="polite">
               <div className="buyer-reason-heading">
                 <span>Why it was flagged</span>
-                <ArrowUpRight size={17} />
               </div>
               <h3>{eventLabels[selectedEvent.type]}</h3>
               <p>{selectedEvent.detail}</p>
@@ -475,36 +366,6 @@ export function BuyerPortal({ data }: { data: BuyerDataset }) {
           </div>
         )}
       </section>
-
-      <section className="buyer-dataset-footer" aria-labelledby="dataset-contents">
-        <div>
-          <p className="buyer-eyebrow">Behind the numbers</p>
-          <h2 id="dataset-contents">Small signals. A fuller picture.</h2>
-          <p>
-            This sample contains simulated trip summaries and driving events. No real people or
-            locations are included.
-          </p>
-        </div>
-        <div className="buyer-signals">
-          <span>
-            <Gauge size={16} /> Motion events
-          </span>
-          <span>
-            <MapPin size={16} /> Trip distance
-          </span>
-          <span>
-            <Zap size={16} /> Energy estimates
-          </span>
-          <span>
-            <CarFront size={16} /> Driver comparisons
-          </span>
-        </div>
-      </section>
-      <footer className="buyer-footnote">
-        <span>ERIDE / Data Portal</span>
-        <p>For demonstration only. Flags use illustrative rules, not a validated safety score.</p>
-        <span>{datasetSummary.dayCount} days. One shared car.</span>
-      </footer>
     </main>
   );
 }

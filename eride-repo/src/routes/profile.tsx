@@ -1,5 +1,4 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, Plus } from "lucide-react";
 import { useAccountDashboard, useSession } from "@/lib/account-api";
 import { AccountTripCard } from "@/components/AccountTripCard";
 export const Route = createFileRoute("/profile")({
@@ -14,9 +13,7 @@ export function Profile() {
     <main className="account-page">
       <div className="account-page-heading">
         <div>
-          <p className="account-eyebrow">Your account</p>
-          <h1>{user?.name.split(" ")[0]}'s trips</h1>
-          <p className="account-muted">Your shared journeys, all in one place.</p>
+          <h1>My trips</h1>
         </div>
         <Link
           className="account-button"
@@ -24,7 +21,6 @@ export function Profile() {
           params={{ step: "1" }}
           search={{ trip: undefined }}
         >
-          <Plus size={16} />
           Book a trip
         </Link>
       </div>
@@ -42,18 +38,7 @@ export function Profile() {
         </div>
       )}
       {!dashboard.isPending && !dashboard.error && !trips.length && (
-        <div className="account-panel account-empty">
-          <h2>Your first shared trip is waiting.</h2>
-          <p className="account-muted">Pick a destination and we'll look for a match.</p>
-          <Link
-            className="account-secondary"
-            to="/trip/$step"
-            params={{ step: "1" }}
-            search={{ trip: undefined }}
-          >
-            Book a trip <ArrowRight size={15} />
-          </Link>
-        </div>
+        <p className="account-muted">No trips yet.</p>
       )}
       <div className="grid gap-5">
         {trips.map((trip) => {
@@ -75,7 +60,7 @@ export function Profile() {
                 params={{ step: "2" }}
                 search={{ trip: trip.id }}
               >
-                View trip <ArrowRight size={15} />
+                View trip
               </Link>
             </AccountTripCard>
           );

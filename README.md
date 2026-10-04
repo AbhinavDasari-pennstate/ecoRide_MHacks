@@ -73,6 +73,6 @@ node node_modules/typescript/bin/tsc --noEmit
 npm.cmd run build
 ```
 
-The legacy opt-in demo integration test is skipped by default; browser demo impersonation is no longer supported. Backend tests cover authenticated ownership, booking, session expiry/revocation, buyer access, and throttling. Frontend tests cover role guards, expired-session cleanup, booking states, portal filters, and offline cache boundaries.
+Backend tests cover authenticated ownership, booking, session expiry/revocation, buyer access, and throttling. Frontend tests cover role guards, expired-session cleanup, booking states, portal filters, and offline cache boundaries.
 
 See [backend setup](backend/README.md) for account/security details and [database setup](backend/NEON_SETUP.md) for Neon configuration.

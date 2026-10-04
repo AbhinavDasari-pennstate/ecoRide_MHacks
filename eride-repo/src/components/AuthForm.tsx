@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Leaf } from "lucide-react";
 import {
   accountHome,
   accountRequest,
@@ -55,29 +54,8 @@ export function AuthForm({ signup, next }: { signup: boolean; next: string }) {
   }
   return (
     <main className="auth-layout">
-      <aside className="auth-story">
-        <Leaf size={32} strokeWidth={1.5} />
-        <p className="account-eyebrow">A little less solo.</p>
-        <h2>
-          A better way
-          <br />
-          to get there.
-        </h2>
-        <p>Split the journey. Share the cost. Make room for one less car on campus.</p>
-        <div className="auth-story-bottom">
-          <span>Shared rides</span>
-          <span>Thoughtful routes</span>
-          <span>Your campus</span>
-        </div>
-      </aside>
       <section className="auth-form-panel">
-        <p className="account-eyebrow">{signup ? "Join the ride" : "Welcome back"}</p>
         <h1>{signup ? "Create your account" : "Sign in to ERIDE"}</h1>
-        <p className="account-muted">
-          {signup
-            ? "Your next shared trip starts here."
-            : "Your trips, your cars, your way forward."}
-        </p>
         <form onSubmit={(event) => void submit(event)} className="account-form">
           {signup && (
             <label className="account-label">
@@ -135,7 +113,6 @@ export function AuthForm({ signup, next }: { signup: boolean; next: string }) {
           )}
           <button className="account-button w-full" disabled={busy} type="submit">
             {busy ? "Please wait…" : signup ? "Create account" : "Sign in"}
-            <ArrowRight size={16} />
           </button>
         </form>
         <p className="auth-switch">
@@ -144,9 +121,9 @@ export function AuthForm({ signup, next }: { signup: boolean; next: string }) {
             {signup ? "Sign in" : "Create an account"}
           </Link>
         </p>
-        <p className="account-field-note mt-6">
-          Data buyers sign in with an account approved by the ERIDE team.
-        </p>
+        {next === "/buyer" && (
+          <p className="account-field-note mt-6">Buyer access requires account approval.</p>
+        )}
       </section>
     </main>
   );

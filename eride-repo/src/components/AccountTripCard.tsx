@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { Car, Clock3, Leaf, MapPin } from "lucide-react";
 import type { AccountTrip } from "@/lib/account-api";
 import { campusDay, campusTime, type ApiMatch } from "@/lib/backend";
 
@@ -26,31 +25,19 @@ export function AccountTripCard({
     <article className="account-panel">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="account-muted mb-2 text-xs uppercase tracking-[.16em]">
-            {trip.role === "driver" ? "Driving a shared trip" : "Your shared ride"}
+          <p className="account-muted mb-2 text-sm">
+            {trip.role === "driver" ? "Driver" : "Rider"} · Trip #{trip.id}
           </p>
           <h2 className="text-2xl font-semibold tracking-tight">{trip.dest_name}</h2>
         </div>
-        <span className="rounded-full bg-secondary px-3 py-1.5 text-xs font-semibold">
-          {status}
-        </span>
+        <span className="text-sm font-medium">{status}</span>
       </div>
       <div className="account-muted mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm">
-        <span className="flex items-center gap-2">
-          <Clock3 className="size-4" />
+        <span>
           {campusDay(match?.depart_time ?? trip.window_start)},{" "}
           {campusTime(match?.depart_time ?? trip.window_start)}
         </span>
-        <span className="flex items-center gap-2">
-          <MapPin className="size-4" />
-          Ann Arbor
-        </span>
-        {match?.vehicle && (
-          <span className="flex items-center gap-2">
-            <Car className="size-4" />
-            {match.vehicle.make_model}
-          </span>
-        )}
+        {match?.vehicle && <span>{match.vehicle.make_model}</span>}
       </div>
       {match?.cost_per_person_cents != null ? (
         <div className="mt-6 grid gap-5 border-t border-border pt-5 sm:grid-cols-2">
@@ -62,23 +49,14 @@ export function AccountTripCard({
           </div>
           {match.impact && (
             <div>
-              <p className="account-muted flex items-center gap-1.5 text-sm">
-                <Leaf className="size-4" />
-                Projected group CO₂ savings
-              </p>
+              <p className="account-muted text-sm">Projected group CO₂ savings</p>
               <p className="mt-1 text-3xl font-semibold text-primary">
                 {match.impact.kg_co2_avoided.toFixed(1)} <span className="text-base">kg</span>
               </p>
             </div>
           )}
         </div>
-      ) : (
-        <p className="account-muted mt-5 text-sm">
-          {trip.status === "cancelled"
-            ? "This request is no longer looking for a ride."
-            : "Price and projected savings appear when a suitable ride is found."}
-        </p>
-      )}
+      ) : null}
       {match?.impact && (
         <p className="account-muted mt-4 text-xs">
           Compared with separate gasoline trips.{" "}
