@@ -24,7 +24,10 @@ _pool_lock = threading.Lock()
 def _url(direct: bool = False) -> str:
     if config.DATABASE_URL == "local":
         import pgserver  # dev only (requirements-dev.txt)
-        path = os.path.join(os.environ["LOCALAPPDATA"], "campus-rides-pg")
+        base = (os.environ.get("LOCALAPPDATA")                       # Windows
+                or os.environ.get("XDG_DATA_HOME")                   # Linux
+                or os.path.expanduser("~/.local/share"))             # macOS and the XDG default
+        path = os.path.join(base, "campus-rides-pg")
         return pgserver.get_server(path, cleanup_mode=None).get_uri()
     return config.DATABASE_URL_DIRECT if direct else config.DATABASE_URL
 
