@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from app import apply, auth, config, db, voice
+from app import apply, auth, config, db, notify, voice
 
 
 @asynccontextmanager
@@ -289,7 +289,10 @@ def call_user(user_id: int, body: CallIn, actor=Depends(auth.require_service)):
 def voice_initiation(body: InitiationIn, actor=Depends(auth.require_service)):
     """ElevenLabs' conversation initiation webhook for inbound calls: the caller's dynamic variables.
     setup_voice.py registers the URL with the service token as its X-Api-Key header."""
-    return voice.initiation(body.caller_id)
+    data = voice.initiation(body.caller_id)
+    # Remember who is on the line, so call_rider cannot ring the caller back mid-call.
+    notify.record_inbound_call(data["dynamic_variables"].get("user_id"))
+    return data
 
 
 @app.patch("/trips/{trip_id}")

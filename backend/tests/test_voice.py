@@ -11,10 +11,18 @@ import pytest
 from fastapi.testclient import TestClient
 from mcp import Client
 
-from app import apply, config, voice
+from app import apply, config, notify, voice
 
 USER = {"id": 2, "name": "Maya", "phone": "+17345550102"}
 RIDES = {"user": USER, "rides": [{"trip_id": 1, "match_id": 7, "status": "matched", "summary": "Alex drives Maya to Meijer."}]}
+
+
+def no_ledger(monkeypatch):
+    """Keep these unit tests off the database: the send-once ledger reads and writes events."""
+    monkeypatch.setattr(notify, "call_guard", lambda user_id: None)
+    monkeypatch.setattr(notify, "record_outbound_call", lambda user_id, reason: None)
+    monkeypatch.setattr(notify, "already_sent", lambda *a, **k: False)
+    monkeypatch.setattr(notify, "record_sent", lambda *a, **k: None)
 
 
 def mock(monkeypatch, module, handler):
@@ -68,6 +76,7 @@ def test_call_user_request(monkeypatch):
     for k, v in {"ELEVENLABS_API_KEY": "xi", "ELEVENLABS_AGENT_ID": "ag1", "ELEVENLABS_PHONE_NUMBER_ID": "pn1"}.items():
         monkeypatch.setattr(config, k, v)
     monkeypatch.setattr(apply, "user_rides", lambda uid: RIDES)
+    no_ledger(monkeypatch)
     seen = mock(monkeypatch, voice, lambda r: httpx.Response(200, json={"success": True, "conversation_id": "c1"}))
     assert voice.call_user(2, "confirm your seat") == {"calling": "Maya", "conversation_id": "c1"}
     req = seen[0]
@@ -108,9 +117,50 @@ def test_request_ride_defaults_and_say(monkeypatch):
     monkeypatch.setattr(apply, "create_trip", lambda d: made.update(d) or {"id": 3, "dest_name": "Meijer"})
     monkeypatch.setattr(apply, "run_planning", lambda *a, **k: {})
     monkeypatch.setattr(apply, "matches_for_trip", lambda tid: [{"id": 1, "summary": "Alex drives Maya and Jordan."}])
+    monkeypatch.setattr(apply, "find_duplicate_trip", lambda *a, **k: None)
     out = call("request_ride", user_id=1, destination="Meijer", earliest="2026-10-10T13:45", role="driver")
-    assert out == {"trip_id": 3, "match_id": 1, "say": "Alex drives Maya and Jordan."}
+    assert out == {"trip_id": 3, "match_id": 1, "already_booked": False, "say": "Alex drives Maya and Jordan."}
     assert (made["window_end"] - made["window_start"]).total_seconds() == 45 * 60 and made["needs_vehicle"] is None
+
+
+def test_request_ride_plans_with_the_voice_planner(monkeypatch):
+    """Gemini takes 5-20 s, which is a long silence on a call, so the phone path has its own mode."""
+    monkeypatch.setattr(config, "VOICE_PLANNER", "deterministic")
+    seen = {}
+    monkeypatch.setattr(apply, "find_duplicate_trip", lambda *a, **k: None)
+    monkeypatch.setattr(apply, "create_trip", lambda d: {"id": 3, "dest_name": "Meijer"})
+    monkeypatch.setattr(apply, "run_planning", lambda *a, **k: seen.update(k))
+    monkeypatch.setattr(apply, "matches_for_trip", lambda tid: [])
+    call("request_ride", user_id=1, destination="Meijer", earliest="2026-10-10T13:45", role="driver")
+    assert seen["mode"] == "deterministic"
+
+    monkeypatch.setattr(config, "VOICE_PLANNER", "")        # empty follows PLANNER
+    seen.clear()
+    call("request_ride", user_id=1, destination="Meijer", earliest="2026-10-10T13:45", role="driver")
+    assert seen["mode"] is None
+
+
+def test_the_agent_never_introduces_itself_twice():
+    """The greeting is already spoken as the first message, so the prompt must forbid a second one."""
+    assert voice.FIRST_MESSAGE == "{{greeting}}"
+    assert "this is Eco from ecoRide" in voice.PLACEHOLDERS["greeting"]
+    prompt = voice.AGENT_PROMPT
+    assert "has already been spoken" in prompt and "Do not greet them again" in prompt
+    # A recognised caller is already identified, so the agent must not spend a tool round on it.
+    assert "do not call\n   find_caller" in prompt or "do not call find_caller" in prompt
+    # No silence and no second booking.
+    assert "One moment" in prompt and "call request_ride once" in prompt
+    assert "at most once for the same request" in prompt
+    assert "Never use call_rider on the person you are already speaking to." in prompt
+    assert "—" not in prompt, "no em dashes in agent speech"
+
+
+def test_the_elevenlabs_model_default_matches_the_dashboard():
+    """An unset ELEVENLABS_LLM must not make setup_voice.py revert the model chosen in the dashboard.
+    Checks the fallback in the source, because reloading config here would leak into other tests."""
+    from pathlib import Path
+    source = (Path(config.__file__)).read_text(encoding="utf-8")
+    assert 'os.getenv("ELEVENLABS_LLM", "deepseek-v41-flash")' in source
 
 
 def test_initiation_supplies_every_variable(monkeypatch):

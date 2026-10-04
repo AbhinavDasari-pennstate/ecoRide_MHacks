@@ -432,6 +432,30 @@ def create_trip(data: dict) -> dict:
     return _out(row)
 
 
+def find_duplicate_trip(user_id: int, role: str, dest_name: str, window_start, window_end,
+                        within_minutes: int = 10) -> dict | None:
+    """A live trip this person already posted for the same place in an overlapping window.
+
+    Makes a repeated request idempotent: if the voice agent re-issues the same booking after a
+    slow answer, we hand back the trip it already created instead of booking a second one.
+    Cancelled trips never count, so someone can rebook after cancelling."""
+    where = {"dest_name": dest_name}
+    _geocode_dest(where)             # resolve "Meijer" exactly as create_trip would
+    start, end = _ts(window_start), _ts(window_end)
+    with db.conn() as c:
+        rows = c.execute("select * from trips where user_id = %s and role = %s and status <> 'cancelled'"
+                         " and created_at > now() - make_interval(mins => %s)"
+                         " and window_start < %s and %s < window_end order by id desc",
+                         (user_id, role, within_minutes, end, start)).fetchall()
+    here = (where["dest_lat"], where["dest_lng"])
+    for row in rows:
+        same_place = (row["dest_name"] == where.get("dest_name")
+                      or core.haversine_mi((row["dest_lat"], row["dest_lng"]), here) <= config.DEST_RADIUS_MI)
+        if same_place:
+            return _out(row)
+    return None
+
+
 def update_trip(trip_id: int, data: dict) -> dict:
     d = _clean(data, [f for f in TRIP_FIELDS if f not in ("user_id", "role")])
     if not d:

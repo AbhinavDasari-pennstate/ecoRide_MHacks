@@ -16,6 +16,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 MAPS_SERVER_KEY = os.getenv("MAPS_SERVER_KEY", "")
 # Read at call time (config.PLANNER), so scripts can switch modes at runtime.
 PLANNER = os.getenv("PLANNER", "gemini")                   # gemini (no key = fallback) | deterministic
+# The phone path plans with this instead, because Gemini takes 5-20 s and that is a long silence on a
+# call. Empty follows PLANNER. Measured on 2026-10-04: deterministic 0.01 s, Gemini 4.8-8.6 s.
+VOICE_PLANNER = os.getenv("VOICE_PLANNER", "deterministic")   # deterministic | gemini | empty
 EXPLAIN = os.getenv("EXPLAIN", "template")                  # template | gemini
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")  # fastest reliable Flash in an Oct 3 probe (3.7/3.8 were overloaded); 2.5 is closed to new keys
 GEMINI_BACKUP_MODEL = os.getenv("GEMINI_BACKUP_MODEL", "gemini-3.5-flash-lite")  # used after a 429/5xx from GEMINI_MODEL
@@ -27,7 +30,8 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_AGENT_ID = os.getenv("ELEVENLABS_AGENT_ID", "")
 ELEVENLABS_MCP_SERVER_ID = os.getenv("ELEVENLABS_MCP_SERVER_ID", "")
 ELEVENLABS_PHONE_NUMBER_ID = os.getenv("ELEVENLABS_PHONE_NUMBER_ID", "")
-ELEVENLABS_LLM = os.getenv("ELEVENLABS_LLM", "gemini-2.5-flash")
+# Must match the model chosen in the ElevenLabs dashboard, or rerunning setup_voice.py reverts it.
+ELEVENLABS_LLM = os.getenv("ELEVENLABS_LLM", "deepseek-v41-flash")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")  # empty = ElevenLabs' default voice
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")

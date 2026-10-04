@@ -6,7 +6,7 @@ import httpx
 import pytest
 from mcp import Client
 
-from app import apply, config, voice
+from app import apply, config, notify, voice
 
 
 def failing_client(seen, message):
@@ -55,6 +55,8 @@ def test_call_user_reports_uncertain_network_failure_without_retry_or_details(mo
         "user": {"id": user_id, "name": "Maya", "phone": "+17345550102"},
         "rides": [],
     })
+    monkeypatch.setattr(notify, "call_guard", lambda user_id: None)
+    monkeypatch.setattr(notify, "record_outbound_call", lambda user_id, reason: None)
     seen = []
     monkeypatch.setattr(voice, "_http", failing_client(seen, "secret-key leaked upstream"))
 
@@ -69,6 +71,7 @@ def test_request_ride_without_match_asks_caller_to_check_rides(monkeypatch):
     monkeypatch.setattr(apply, "create_trip", lambda data: {"id": 3, "dest_name": "Meijer"})
     monkeypatch.setattr(apply, "run_planning", lambda *args, **kwargs: {})
     monkeypatch.setattr(apply, "matches_for_trip", lambda trip_id: [])
+    monkeypatch.setattr(apply, "find_duplicate_trip", lambda *args, **kwargs: None)
 
     out = call("request_ride", user_id=2, destination="Meijer", earliest="2026-10-10T13:45")
 
