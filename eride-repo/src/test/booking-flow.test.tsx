@@ -32,6 +32,8 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@/lib/account-api", () => ({
   accountRequest: (...args: unknown[]) => mocks.request(...args),
   useSession: () => ({ data: { user: mocks.user } }),
+  useCampusImpact: () => ({ data: undefined }),
+  useVoiceAgent: () => ({ data: undefined }),
   useAccountDashboard: () => ({
     data: mocks.dashboard,
     isPending: false,

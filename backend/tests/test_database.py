@@ -279,3 +279,28 @@ def test_web_vehicle_selection_validates_and_reopens_confirmation(database):
         assert changed["vehicle_id"] == 2 and changed["status"] == "proposed"
         assert changed["booking"]["status"] == "requested"
         assert all(p["status"] == "pending" for p in changed["members"])
+
+
+def test_late_passenger_joins_proposed_match_but_never_a_confirmed_one(database):
+    trip(database, 2, "passenger")
+    d = trip(database)
+    mid = apply.run_planning("test", d["id"])["match_ids"][0]
+    for uid in (1, 2):
+        apply.accept(mid, uid)
+    late = trip(database, 3, "passenger")
+    assert apply.run_planning("test", late["id"])["match_ids"] == [mid]      # pooled into the existing group
+    m = apply.get_match(mid)
+    live = [x for x in m["members"] if x["status"] != "cancelled"]
+    assert sorted(x["trip_id"] for x in live) == [1, 2, 3] and m["pricing"]["group_size"] == 3
+    assert {x["status"] for x in live} == {"pending"}                         # the plan changed: everyone confirms again
+    for uid in (1, 2, 3):
+        apply.accept(mid, uid)
+    confirmed = apply.approve_booking(m["booking"]["id"])["match"]
+    assert confirmed["status"] == "confirmed"
+    mine = apply.dashboard(2)["impact"]                                       # Maya: one third of the group's savings
+    assert mine["trips"] == 1 and mine["kg_co2_avoided"] == round(confirmed["impact"]["kg_co2_avoided"] / 3, 2)
+    assert set(mine["equivalents"]) == {"tree_seedlings_10yr", "smartphone_charges"}
+    later = trip(database, 5, "passenger")
+    result = apply.run_planning("test", later["id"])
+    assert result["match_ids"] == [] and [u["trip_id"] for u in result["unassigned"]] == [later["id"]]
+    assert apply.get_match(mid)["status"] == "confirmed"                      # confirmed groups are left alone

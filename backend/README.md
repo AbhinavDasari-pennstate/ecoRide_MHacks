@@ -128,7 +128,7 @@ may use this token on other operations, but a browser session always takes prece
 | POST | `/bookings/{id}/approve` | owner approves |
 | POST | `/bookings/{id}/decline` | owner declines; the match replans without that car |
 | POST | `/planner/run` | `{trip_id?, match_id?, plan?, dry_run?, mode?}`: plan, recover an at-risk match, or validate a manual plan |
-| GET | `/impact` | Projected totals over proposed/confirmed matches; not measured completed-trip savings |
+| GET | `/impact` | Public. Projected totals over proposed/confirmed matches plus EPA equivalents; not measured completed-trip savings |
 | GET | `/events?since=` | event log after id `since` (poll it for a live feed) |
 | GET | `/agent-runs` | one row per planning run: planner, raw Gemini output, validator errors, retries, latency, fallback |
 | GET | `/users?phone=` | find a user by phone number (any format) |
@@ -144,7 +144,8 @@ The fixture plans use `{DEPART}` / `{DEPART_BAD}` tokens; substitute a real time
 
 ## How a plan is made
 
-1. **Scope:** open trips near the new trip's destination with overlapping windows (for a replan, the match's members too).
+1. **Scope:** open trips, plus trips in not-yet-confirmed matches, near the new trip's destination with overlapping windows
+   (for a replan, the match's members too).
 2. **Draft:** Gemini returns groups (driver, passengers, depart time, rationale) as structured JSON. A 429/5xx is retried
    once by the SDK, then the next attempt uses `GEMINI_BACKUP_MODEL`. With no key, or after a timeout, a hard error or
    3 invalid drafts (20 s total), the deterministic planner drafts instead (`fallback_used`). With no driver trip in
@@ -211,6 +212,11 @@ Use `--browser-only` on both check and setup to test ElevenLabs without Twilio. 
 Twilio account, leave `TWILIO_PHONE_NUMBER` empty and explicitly use `--buy-number` (Twilio bills for the number).
 Otherwise setup uses only the number you selected; it never chooses the first number in your account.
 
+The web app's home page shows a **Talk to Eco** button and the phone number when the public `GET /voice/agent`
+returns `ELEVENLABS_AGENT_ID` and `TWILIO_PHONE_NUMBER`. The button loads the ElevenLabs web widget, so the agent
+must allow unauthenticated web sessions (dashboard -> agent -> Security); allowlist the frontend origin there
+before a public deployment.
+
 Re-run online setup when `PUBLIC_URL` changes. An unchanged URL reuses the saved MCP ID. A changed URL creates a new
 registration and updates the agent; old registrations are retained because other agents may still use them.
 Deleted MCP registrations are recreated. If a saved agent was manually deleted, clear `ELEVENLABS_AGENT_ID` before
@@ -239,8 +245,8 @@ Caller lookup is designed for known demo users and does not yet verify ownership
 - [ ] Reseed right before going on stage, because the scenario leaves the database in its end state.
 - [ ] Rotate any key that was ever pasted into chat, a screenshot or a commit.
 
-Known limits (marked `ponytail:` in the code): single process, so run one uvicorn worker. A rider who arrives after a
-match is proposed isn't added to it until that match replans. A planning run holds its database transaction (and the
+Known limits (marked `ponytail:` in the code): single process, so run one uvicorn worker. A late rider joins a group only while it is
+still proposed; confirmed groups are never reshuffled. A planning run holds its database transaction (and the
 advisory lock) through the Gemini call, so accepts and approvals queue behind it for up to ~20 s.
 
 Browser login and per-user authorization are enforced by the API. Trusted adapters remain responsible for verifying

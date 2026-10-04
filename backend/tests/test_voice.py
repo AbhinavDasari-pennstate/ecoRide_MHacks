@@ -207,3 +207,12 @@ def test_setup_voice_flow(monkeypatch, tmp_path):
     assert "ELEVENLABS_AGENT_ID=ag9" in saved and "ELEVENLABS_PHONE_NUMBER_ID=pn9" in saved
     assert "ELEVENLABS_MCP_SERVER_ID=mcp2" in saved
     assert "TWILIO_PHONE_NUMBER=+17345550199" in saved
+
+
+def test_voice_agent_contact_is_public(monkeypatch):
+    """The home page's "Talk to Eco" button reads this; neither value is secret and no login is needed."""
+    from app.main import app
+    monkeypatch.setattr(config, "ELEVENLABS_AGENT_ID", "ag1")
+    monkeypatch.setattr(config, "TWILIO_PHONE_NUMBER", "+17345550199")
+    with TestClient(app) as client:
+        assert client.get("/voice/agent").json() == {"agent_id": "ag1", "phone": "+17345550199"}

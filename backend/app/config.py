@@ -63,6 +63,9 @@ GRID_KG_CO2_PER_KWH = 0.440   # 970.617 lb/MWh * 0.45359237 / 1000, rounded; exc
 OWN_CAR_MPG = 22.2            # EPA average on-road car, so an own car matches the baseline per mile
 GAS_USD_PER_GALLON = 4.48     # ponytail: price snapshots, not live feeds
 ELECTRICITY_USD_PER_KWH = 0.2305
+# --- equivalents shown next to kg CO2 (EPA GHG Equivalencies Calculator, checked 2026-10-04) ---
+TREE_SEEDLING_10YR_KG_CO2 = 60.0      # one urban tree seedling grown for 10 years: 0.060 t CO2
+SMARTPHONE_CHARGE_KG_CO2 = 0.0124     # one smartphone charge: 1.24e-5 t CO2
 
 TIMEZONE = "America/Detroit"
 ANN_ARBOR = (42.2808, -83.7430)
@@ -84,6 +87,8 @@ SOURCES = {
     "RENTAL_INCREMENT_HOURS": ("hours", "rental rounded up to this increment"),
     "EV_RANGE_RESERVE": ("fraction", "safety reserve kept on every vehicle's range"),
     "ROAD_FACTOR": ("ratio", "road miles per straight-line mile, used only when Maps is unavailable"),
+    "TREE_SEEDLING_10YR_KG_CO2": ("kg CO2 per tree seedling grown for 10 years", "EPA Greenhouse Gas Equivalencies Calculator: 0.060 metric ton CO2 per urban tree planted and grown for 10 years"),
+    "SMARTPHONE_CHARGE_KG_CO2": ("kg CO2 per smartphone charged", "EPA Greenhouse Gas Equivalencies Calculator: 1.24 x 10^-5 metric tons CO2 per smartphone charged"),
 }
 
 SOURCE_URLS = {
@@ -93,11 +98,14 @@ SOURCE_URLS = {
     "GRID_KG_CO2_PER_KWH": "https://www.epa.gov/egrid/summary-data",
     "GAS_USD_PER_GALLON": "https://gasprices.aaa.com/?state=MI",
     "ELECTRICITY_USD_PER_KWH": "https://www.eia.gov/electricity/monthly/epm_table_grapher.php?t=epmt_5_6_a",
+    "TREE_SEEDLING_10YR_KG_CO2": "https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator-calculations-and-references",
+    "SMARTPHONE_CHARGE_KG_CO2": "https://www.epa.gov/energy/greenhouse-gas-equivalencies-calculator-calculations-and-references",
 }
+CHECKED_ON = {"TREE_SEEDLING_10YR_KG_CO2": "2026-10-04", "SMARTPHONE_CHARGE_KG_CO2": "2026-10-04"}   # everything else: 2026-10-03
 
 
 def assumptions() -> dict:
     g = globals()
     return {name: {"value": g[name], "unit": unit, "source": src,
-                   **({"url": SOURCE_URLS[name], "checked_on": "2026-10-03"} if name in SOURCE_URLS else {})}
+                   **({"url": SOURCE_URLS[name], "checked_on": CHECKED_ON.get(name, "2026-10-03")} if name in SOURCE_URLS else {})}
             for name, (unit, src) in SOURCES.items()}

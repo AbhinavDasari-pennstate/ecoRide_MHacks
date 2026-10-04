@@ -376,7 +376,8 @@ def planner_run(body: PlannerRunIn, actor=Depends(auth.require_service)):
 
 
 @app.get("/impact")
-def impact(actor=Depends(auth.principal)):
+def impact():
+    """Public: campus-wide projected totals, no personal data."""
     return apply.impact_summary()
 
 
@@ -402,6 +403,12 @@ def retry_trip_plan(trip_id: int, actor=Depends(auth.principal)):
 def buyer_dataset(actor=Depends(auth.require_user)):
     auth.require_role(actor, "buyer")
     return apply.buyer_dataset()
+
+
+@app.get("/voice/agent")
+def voice_agent():
+    """Public: how the web page reaches the voice agent (widget agent id, phone number). Empty = not set up."""
+    return {"agent_id": config.ELEVENLABS_AGENT_ID, "phone": config.TWILIO_PHONE_NUMBER}
 
 
 app.mount("/", service_only(voice.mcp_app))   # last, so every route above wins; the voice agent's MCP endpoint at POST /mcp

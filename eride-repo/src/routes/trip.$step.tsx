@@ -415,6 +415,16 @@ export function BookingFlow() {
                     <Check className="size-5 text-primary" />
                   )}
                 </div>
+                {match.reasons?.vehicle?.length ? (
+                  <details className="mt-4 text-sm">
+                    <summary className="cursor-pointer font-semibold">Why this car</summary>
+                    <ul className="account-muted mt-2 list-disc space-y-1 pl-5">
+                      {match.reasons.vehicle.map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
               </section>
               {currentStep === 2 &&
                 trip.role === "driver" &&

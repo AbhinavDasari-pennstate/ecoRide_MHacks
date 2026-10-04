@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, Check, Leaf, MapPin, Users, Wallet } from "lucide-react";
 import { LogoMark } from "@/components/Logo";
-import { useSession } from "@/lib/account-api";
+import { TalkToAgent } from "@/components/TalkToAgent";
+import { useCampusImpact, useSession } from "@/lib/account-api";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
@@ -43,6 +44,7 @@ export function Home() {
           <p className="ride-home-note">
             <Check size={13} /> See your match and estimated price before you confirm.
           </p>
+          <TalkToAgent />
           <div className="ride-home-benefits">
             <span>
               <Wallet size={18} /> Shared costs
@@ -92,6 +94,7 @@ export function Home() {
           </div>
         </div>
       </section>
+      <CampusImpact />
       <section className="ride-how" aria-labelledby="ride-how-title">
         <div>
           <p className="account-eyebrow">Booking</p>
@@ -143,5 +146,36 @@ export function Home() {
         <span>Ann Arbor</span>
       </footer>
     </main>
+  );
+}
+
+const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+function CampusImpact() {
+  const impact = useCampusImpact().data;
+  if (!impact?.trips) return null;
+  const stats: [string, string][] = [
+    [impact.kg_co2_avoided.toFixed(1), "kg CO₂ avoided"],
+    [whole.format(impact.miles_avoided), "car miles avoided"],
+    [whole.format(impact.trips), "trips shared"],
+    [`${Math.round(impact.ev_share * 100)}%`, "of groups in an EV"],
+  ];
+  return (
+    <section className="ride-impact" aria-labelledby="ride-impact-title">
+      <p className="account-eyebrow">Campus so far</p>
+      <h2 id="ride-impact-title">What sharing has saved</h2>
+      <div className="ride-impact-grid">
+        {stats.map(([value, label]) => (
+          <div key={label}>
+            <strong>{value}</strong>
+            <span>{label}</span>
+          </div>
+        ))}
+      </div>
+      <p className="ride-impact-note">
+        About {impact.equivalents.tree_seedlings_10yr} tree seedlings growing for ten years, or{" "}
+        {whole.format(impact.equivalents.smartphone_charges)} smartphone charges. {impact.basis}.
+        Emission factors from the EPA.
+      </p>
+    </section>
   );
 }

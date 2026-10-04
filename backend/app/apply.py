@@ -176,9 +176,12 @@ def _scope(c, trip_id, match_id, manual) -> dict[int, core.Trip]:
         anchor = core.Trip(**_get(c, "trips", mt["driver_trip_id"]))
     elif trip_id is not None:
         scope, anchor = {}, core.Trip(**_get(c, "trips", trip_id))
+        # a late arrival can still join a group nobody has confirmed yet; confirmed groups are never reshuffled
+        open_ |= _trips(c, "status = 'matched' and id in (select mm.trip_id from match_members mm join matches m"
+                           " on m.id = mm.match_id where mm.status <> 'cancelled' and m.status = 'proposed')")
     else:
         return open_
-    # ponytail: one hop of "nearby" (same destination, overlapping window); late riders don't join existing matches
+    # ponytail: one hop of "nearby" (same destination, overlapping window)
     return scope | {i: t for i, t in open_.items()
                     if core.haversine_mi(t.dest, anchor.dest) <= config.DEST_RADIUS_MI
                     and t.window_start < anchor.window_end and anchor.window_start < t.window_end}
@@ -699,8 +702,17 @@ def dashboard(user_id: int) -> dict:
                          " left join trips t on t.id = mm.trip_id left join vehicles v on v.id = m.vehicle_id"
                          " where (t.user_id = %s and mm.status <> 'cancelled') or v.owner_id = %s order by m.id desc",
                          (user_id, user_id)).fetchall()
+        share = c.execute(
+            "select coalesce(sum((m.impact->>'kg_co2_avoided')::float * t.party_size / (m.pricing->>'group_size')::int), 0) as kg,"
+            " coalesce(sum((m.impact->>'miles_avoided')::float * t.party_size / (m.pricing->>'group_size')::int), 0) as miles,"
+            " count(*) as trips from match_members mm join matches m on m.id = mm.match_id join trips t on t.id = mm.trip_id"
+            " where t.user_id = %s and mm.status <> 'cancelled' and m.status in ('proposed', 'confirmed')"
+            " and (m.pricing->>'group_size')::int > 0", (user_id,)).fetchone()
         return {"user": user, "trips": trips, "vehicles": vehicles,
-                "matches": [_match_view(c, r["id"]) for r in mids]}
+                "matches": [_match_view(c, r["id"]) for r in mids],
+                "impact": {"kg_co2_avoided": round(share["kg"], 2), "miles_avoided": round(share["miles"], 2),
+                           "trips": share["trips"], "equivalents": core.equivalents(share["kg"]),
+                           "basis": "Your party's share of projected savings on proposed and confirmed trips; not measured"}}
 
 
 def list_vehicles(owner_id=None, active=True, limit=100, offset=0):
@@ -722,6 +734,7 @@ def impact_summary() -> dict:
                           " where m.status in ('proposed', 'confirmed') and mm.status <> 'cancelled'").fetchone()["n"]
     return {"matches": r["matches"], "trips": trips, "miles_avoided": round(r["miles"], 2),
             "kg_co2_avoided": round(r["kg"], 2), "ev_share": round(float(r["ev"]), 2), "simulated": False,
+            "equivalents": core.equivalents(r["kg"]),
             "basis": "Projected savings for proposed and confirmed matches; not measured completed journeys"}
 
 

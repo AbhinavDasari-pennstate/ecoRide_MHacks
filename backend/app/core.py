@@ -222,6 +222,12 @@ def pricing(vehicle: Optional[Vehicle], miles: float, size: int) -> dict:
     }
 
 
+def equivalents(kg: float) -> dict:
+    """kg CO2 in units people can picture (EPA equivalencies; factors and sources in config)."""
+    return {"tree_seedlings_10yr": round(kg / C.TREE_SEEDLING_10YR_KG_CO2, 2),
+            "smartphone_charges": round(kg / C.SMARTPHONE_CHARGE_KG_CO2)}
+
+
 def impact(ctx: Ctx, driver: Trip, ordered: list[Trip], vehicle: Optional[Vehicle],
            distance_source: str = "estimate") -> dict:
     """Shared trip vs. baseline where every trip is a separate gas-car round trip."""
@@ -239,6 +245,7 @@ def impact(ctx: Ctx, driver: Trip, ordered: list[Trip], vehicle: Optional[Vehicl
         "kg_co2_baseline": round(kg_base, 2),
         "kg_co2_avoided": round(kg_base - kg_shared, 2),
         "percent_reduction": round(100 * (kg_base - kg_shared) / kg_base, 1) if kg_base else 0.0,
+        "equivalents": equivalents(kg_base - kg_shared),
         "assumptions": assumptions_for(distance_source),
     }
 

@@ -295,10 +295,11 @@ def test_impact_hand_calculated(monkeypatch):
     # deadhead 2 * 1; route (1 + 1 + 4) * 2 = 12; shared 14. baseline 3 trips * 2 * 4 = 24.
     # kg: 14 * 0.25 kWh/mi * 0.5 = 1.75 vs 24 * 0.4 = 9.6 -> 7.85 avoided, 81.8%
     imp = core.impact(ctx, alex, [maya, jordan], ctx.vehicles[1])
-    assert {k: imp[k] for k in imp if k != "assumptions"} == {
+    assert {k: imp[k] for k in imp if k not in ("assumptions", "equivalents")} == {
         "shared_miles": 14.0, "deadhead_miles": 2.0, "route_miles": 12.0, "baseline_miles": 24.0, "miles_avoided": 10.0,
         "kg_co2_shared": 1.75, "kg_co2_baseline": 9.6, "kg_co2_avoided": 7.85, "percent_reduction": 81.8,
     }
+    assert imp["equivalents"] == {"tree_seedlings_10yr": 0.13, "smartphone_charges": 633}   # 7.85 / 60, 7.85 / 0.0124
     # own car: no deadhead, 12 mi / 25 mpg * 8.887 = 4.27 kg
     own = core.impact(ctx, alex, [maya, jordan], None)
     assert (own["shared_miles"], own["deadhead_miles"], own["kg_co2_shared"], own["kg_co2_avoided"]) == (12.0, 0.0, 4.27, 5.33)

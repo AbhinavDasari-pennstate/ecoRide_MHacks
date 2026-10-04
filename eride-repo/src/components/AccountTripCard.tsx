@@ -69,6 +69,9 @@ export function AccountTripCard({
               <p className="mt-1 text-3xl font-semibold text-primary">
                 {match.impact.kg_co2_avoided.toFixed(1)} <span className="text-base">kg</span>
               </p>
+              <p className="account-muted mt-1 text-xs">
+                {match.impact.percent_reduction.toFixed(0)}% less than driving separately
+              </p>
             </div>
           )}
         </div>
@@ -78,6 +81,9 @@ export function AccountTripCard({
             ? "This request is no longer looking for a ride."
             : "Price and projected savings appear when a suitable ride is found."}
         </p>
+      )}
+      {match?.explanation && (
+        <p className="mt-5 text-sm leading-relaxed">{match.explanation}</p>
       )}
       {match?.impact && (
         <p className="account-muted mt-4 text-xs">

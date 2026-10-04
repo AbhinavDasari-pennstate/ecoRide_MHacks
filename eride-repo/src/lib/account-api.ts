@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ApiMatch, ApiTrip, ApiVehicle } from "./backend";
+import type { ApiMatch, ApiTrip, ApiVehicle, ImpactTotals } from "./backend";
 
 export type AccountRole = "rider" | "owner" | "buyer";
 export type SessionUser = { id: number; name: string; email: string; role: AccountRole };
@@ -16,7 +16,9 @@ export type AccountDashboard = {
   trips: AccountTrip[];
   vehicles: AccountVehicle[];
   matches: ApiMatch[];
+  impact: ImpactTotals;
 };
+export type CampusImpact = ImpactTotals & { matches: number; ev_share: number };
 
 export class AccountError extends Error {
   constructor(
@@ -78,6 +80,25 @@ export function useAccountDashboard(userId: number | undefined) {
     queryFn: () => accountRequest<AccountDashboard>(`/users/${userId}/dashboard`),
     enabled: userId !== undefined,
     refetchInterval: 5000,
+    retry: false,
+  });
+}
+
+export function useCampusImpact() {
+  return useQuery({
+    queryKey: ["impact"],
+    queryFn: () => accountRequest<CampusImpact>("/impact"),
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    retry: false,
+  });
+}
+
+export function useVoiceAgent() {
+  return useQuery({
+    queryKey: ["voice-agent"],
+    queryFn: () => accountRequest<{ agent_id: string; phone: string }>("/voice/agent"),
+    staleTime: Infinity,
     retry: false,
   });
 }

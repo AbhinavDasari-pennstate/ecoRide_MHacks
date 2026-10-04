@@ -55,6 +55,33 @@ export function Profile() {
           </Link>
         </div>
       )}
+      {dashboard.data?.impact?.trips ? (
+        <section className="account-panel mb-5" aria-labelledby="profile-impact">
+          <p className="account-eyebrow">Your impact</p>
+          <h2 id="profile-impact" className="mt-1 text-xl font-semibold">
+            Your share of the savings
+          </h2>
+          <div className="mt-5 grid gap-5 sm:grid-cols-3">
+            {(
+              [
+                [dashboard.data.impact.kg_co2_avoided.toFixed(1), "kg CO₂ avoided"],
+                [dashboard.data.impact.miles_avoided.toFixed(1), "car miles avoided"],
+                [String(dashboard.data.impact.trips), "shared trips"],
+              ] as [string, string][]
+            ).map(([value, label]) => (
+              <div key={label}>
+                <p className="text-3xl font-semibold text-primary">{value}</p>
+                <p className="account-muted text-sm">{label}</p>
+              </div>
+            ))}
+          </div>
+          <p className="account-muted mt-4 text-xs">
+            About {dashboard.data.impact.equivalents.tree_seedlings_10yr} tree seedlings growing for
+            ten years, or {dashboard.data.impact.equivalents.smartphone_charges.toLocaleString()} phone
+            charges. {dashboard.data.impact.basis}.
+          </p>
+        </section>
+      ) : null}
       <div className="grid gap-5">
         {trips.map((trip) => {
           const match =
