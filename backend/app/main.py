@@ -130,6 +130,12 @@ class AcceptIn(InputModel):
     user_id: Optional[int] = None
 
 
+class LocationIn(InputModel):
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    accuracy_m: Optional[float] = Field(default=None, ge=0, le=100_000)
+
+
 class VehicleChoiceIn(InputModel):
     vehicle_id: int = Field(gt=0)
 
@@ -257,6 +263,18 @@ def accept(match_id: int, body: Optional[AcceptIn] = None, actor=Depends(auth.pr
     auth.require_role(actor, "rider", "owner")
     auth.match_access(actor, match_id)
     return apply.accept(match_id, auth.identity(actor, body.user_id if body else None))
+
+
+@app.post("/matches/{match_id}/location")
+def share_location(match_id: int, body: LocationIn, actor=Depends(auth.require_user)):
+    auth.match_access(actor, match_id)
+    return apply.share_location(match_id, actor["id"], body.lat, body.lng, body.accuracy_m)
+
+
+@app.get("/matches/{match_id}/locations")
+def live_locations(match_id: int, actor=Depends(auth.require_user)):
+    auth.match_access(actor, match_id)
+    return apply.live_locations(match_id, actor["id"])
 
 
 @app.post("/vehicles")

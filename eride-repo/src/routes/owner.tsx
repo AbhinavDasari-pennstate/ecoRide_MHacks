@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Car, Check, Plus, X, Zap } from "lucide-react";
 import { accountRequest, useAccountDashboard, useSession } from "@/lib/account-api";
 import { campusDay, windowLabel } from "@/lib/backend";
+import { LiveLocation } from "@/components/LiveLocation";
 
 export const Route = createFileRoute("/owner")({ component: OwnerPage });
 
@@ -374,6 +375,11 @@ export function OwnerPage() {
                             ? "The trip is confirmed."
                             : "Waiting for the travelers to confirm."}
                         </p>
+                      )}
+                      {match.status === "confirmed" && user && (
+                        <div className="mt-5">
+                          <LiveLocation match={match} userId={user.id} travelRole={null} />
+                        </div>
                       )}
                     </article>
                   );

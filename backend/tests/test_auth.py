@@ -180,3 +180,31 @@ def test_proxy_client_quota_and_untrusted_forwarded_headers(database, peer, trus
         next_client = client.post("/auth/login", json={"email": "new-client@example.com", "password": PASSWORD},
                                   headers={"X-Forwarded-For": "198.51.100.200"})
         assert next_client.status_code == (401 if trusted else 429)
+
+
+def test_live_location_visibility_follows_ride_roles(database):
+    with (TestClient(app) as driver, TestClient(app) as rider, TestClient(app) as other_rider,
+          TestClient(app) as owner, TestClient(app) as stranger):
+        d = signup(driver, "driver@example.com").json()["user"]
+        p = signup(rider, "rider@example.com").json()["user"]
+        q = signup(other_rider, "other@example.com").json()["user"]
+        o = signup(owner, "owner@example.com", "owner").json()["user"]
+        signup(stranger, "stranger@example.com")
+        with db.conn() as c:
+            c.execute("update vehicles set owner_id = %s", (o["id"],))
+        trip(database, p["id"], "passenger")
+        trip(database, q["id"], "passenger")
+        mid = apply.run_planning("location_test", trip(database, d["id"])["id"])["match_ids"][0]
+        here = {"lat": 42.28, "lng": -83.74, "accuracy_m": 12}
+        assert driver.post(f"/matches/{mid}/location", json=here).status_code == 422   # not confirmed yet
+        for client in (driver, rider, other_rider):
+            assert client.post(f"/matches/{mid}/accept", json={}).status_code == 200
+        assert owner.post(f"/bookings/{apply.get_match(mid)['booking']['id']}/approve").status_code == 200
+        for client in (driver, rider, other_rider):
+            assert client.post(f"/matches/{mid}/location", json=here).status_code == 200
+        assert owner.post(f"/matches/{mid}/location", json=here).status_code == 422     # not in the car
+        assert stranger.get(f"/matches/{mid}/locations").status_code == 403
+        assert stranger.post(f"/matches/{mid}/location", json=here).status_code == 403
+        seen = lambda client: sorted(l["user_id"] for l in client.get(f"/matches/{mid}/locations").json()["locations"])
+        assert seen(driver) == sorted([d["id"], p["id"], q["id"]])
+        assert seen(rider) == seen(other_rider) == seen(owner) == [d["id"]]

@@ -797,3 +797,48 @@ def buyer_dataset() -> dict:
                "startDate": dates[0] if dates else None, "endDate": dates[-1] if dates else None}
     return {"datasetSummary": summary, "demoTrips": trips, "driverSummaries": drivers,
             "drivingEvents": events, "eventLabels": EVENT_LABELS}
+
+
+# ---------------------------------------------------------------- live location
+
+LOCATION_MAX_AGE_S = 15 * 60   # older positions are hidden rather than shown as current
+
+
+def _location_role(c, match_id: int, user_id: int) -> dict:
+    """The match status and this user's part in it: 'driver', 'passenger', 'owner' or None."""
+    row = c.execute("select m.status, v.owner_id, (select t.role from match_members mm join trips t on t.id = mm.trip_id"
+                    " where mm.match_id = m.id and t.user_id = %s and mm.status <> 'cancelled' limit 1) as role"
+                    " from matches m left join vehicles v on v.id = m.vehicle_id where m.id = %s",
+                    (user_id, match_id)).fetchone()
+    if not row:
+        raise LookupError("Match not found")
+    return {"status": row["status"], "role": row["role"] or ("owner" if row["owner_id"] == user_id else None)}
+
+
+def share_location(match_id: int, user_id: int, lat: float, lng: float, accuracy_m: float | None) -> dict:
+    with db.conn() as c:
+        who = _location_role(c, match_id, user_id)
+        if who["status"] != "confirmed":
+            raise ValueError("Location sharing starts once the ride is confirmed")
+        if who["role"] not in ("driver", "passenger"):
+            raise ValueError("Only people travelling in this ride can share their location")
+        c.execute("insert into live_locations (match_id, user_id, lat, lng, accuracy_m) values (%s, %s, %s, %s, %s)"
+                  " on conflict (match_id, user_id) do update set lat = excluded.lat, lng = excluded.lng,"
+                  " accuracy_m = excluded.accuracy_m, updated_at = now()", (match_id, user_id, lat, lng, accuracy_m))
+    return {"ok": True}
+
+
+def live_locations(match_id: int, user_id: int) -> dict:
+    """The driver sees every traveler; passengers and the vehicle owner see only the driver."""
+    with db.conn() as c:
+        who = _location_role(c, match_id, user_id)
+        if who["status"] != "confirmed" or who["role"] is None:
+            return {"locations": []}
+        rows = c.execute("select l.user_id, u.name, t.role, l.lat, l.lng, l.accuracy_m, l.updated_at"
+                         " from live_locations l join users u on u.id = l.user_id"
+                         " join match_members mm on mm.match_id = l.match_id and mm.status <> 'cancelled'"
+                         " join trips t on t.id = mm.trip_id and t.user_id = l.user_id"
+                         " where l.match_id = %s and l.updated_at > now() - make_interval(secs => %s)"
+                         " and (%s or t.role = 'driver') order by t.role, u.name",
+                         (match_id, LOCATION_MAX_AGE_S, who["role"] == "driver")).fetchall()
+    return {"locations": [_out(r) for r in rows]}

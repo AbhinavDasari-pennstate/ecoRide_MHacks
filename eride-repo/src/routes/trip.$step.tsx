@@ -8,6 +8,7 @@ import {
   type AccountTrip,
 } from "@/lib/account-api";
 import { AccountTripCard } from "@/components/AccountTripCard";
+import { LiveLocation } from "@/components/LiveLocation";
 import { campusDay, campusTime } from "@/lib/backend";
 
 export const Route = createFileRoute("/trip/$step")({
@@ -528,6 +529,13 @@ export function BookingFlow() {
                     </Link>
                   </div>
                 </section>
+              )}
+              {match.status === "confirmed" && user && (
+                <LiveLocation
+                  match={match}
+                  userId={user.id}
+                  travelRole={trip.role === "driver" ? "driver" : "passenger"}
+                />
               )}
             </>
           )}
