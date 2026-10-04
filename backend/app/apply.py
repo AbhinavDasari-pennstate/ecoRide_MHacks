@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import psycopg
 
-from app import config, core, db, maps, notify, planner
+from app import config, core, db, maps, notify, planner, telemetry
 
 _lock = threading.Lock()   # ponytail: single process; the advisory lock only guards the DB side
 
@@ -355,6 +355,7 @@ def _retire(c, old, status, cause, run_id) -> dict:
     c.execute("update bookings set status = 'cancelled' where match_id = %s and status in ('requested', 'approved')", (mid,))
     if status == "cancelled":
         c.execute("update match_members set status = 'cancelled' where match_id = %s", (mid,))
+        telemetry.void_for_match(c, mid)      # keep the generated trip, mark it, drop the payout
     c.execute("update matches set status = %s, vehicle_id = null, updated_at = now() where id = %s", (status, mid))
     return _changed(c, mid, cause, before, "match_at_risk" if status == "at_risk" else "match_updated", run_id)
 
@@ -410,6 +411,8 @@ def _maybe_confirm(c, mid) -> None:
     c.execute("update trips set status = 'confirmed' where id in"
               " (select trip_id from match_members where match_id = %s and status = 'accepted')", (mid,))
     db.event(c, "match_confirmed", {"match_id": mid})
+    # A confirmed ride is what the data business sells: one simulated telemetry trip, once.
+    telemetry.record_confirmed_ride(c, mid)
 
 
 def _replan(match_id, cause, trip_id=None) -> dict:
@@ -740,11 +743,16 @@ def dashboard(user_id: int) -> dict:
             " count(*) as trips from match_members mm join matches m on m.id = mm.match_id join trips t on t.id = mm.trip_id"
             " where t.user_id = %s and mm.status <> 'cancelled' and m.status in ('proposed', 'confirmed')"
             " and (m.pricing->>'group_size')::int > 0", (user_id,)).fetchone()
+        earnings = c.execute("select count(*) as trips, coalesce(sum(amount_cents), 0) as cents"
+                             " from owner_data_earnings where owner_id = %s", (user_id,)).fetchone()
         return {"user": user, "trips": trips, "vehicles": vehicles,
                 "matches": [_match_view(c, r["id"]) for r in mids],
                 "impact": {"kg_co2_avoided": round(share["kg"], 2), "miles_avoided": round(share["miles"], 2),
                            "trips": share["trips"], "equivalents": core.equivalents(share["kg"]),
-                           "basis": "Your party's share of projected savings on proposed and confirmed trips; not measured"}}
+                           "basis": "Your party's share of projected savings on proposed and confirmed trips; not measured"},
+                "data_earnings": {"trips": earnings["trips"], "cents": earnings["cents"],
+                                  "per_trip_cents": config.DEMO_DATA_PAYOUT_CENTS, "simulated": True,
+                                  "basis": "Demo numbers for a data programme that is not running. No money moves."}}
 
 
 def list_vehicles(owner_id=None, active=True, limit=100, offset=0):
@@ -909,8 +917,10 @@ def _iso_ms(t: datetime) -> str:
 def buyer_dataset() -> dict:
     """buyer_trips / buyer_events in the shape of the frontend's BuyerDataset; summaries derived here."""
     with db.conn() as c:
-        trip_rows = c.execute("select * from buyer_trips order by started_at desc").fetchall()
-        event_rows = c.execute("select * from buyer_events order by trip_id, offset_seconds").fetchall()
+        trip_rows = c.execute("select * from buyer_trips where not voided"
+                              " order by started_at desc").fetchall()
+        event_rows = c.execute("select e.* from buyer_events e join buyer_trips t on t.id = e.trip_id"
+                               " where not t.voided order by e.trip_id, e.offset_seconds").fetchall()
     events_by_trip: dict[str, list] = {}
     for e in event_rows:
         events_by_trip.setdefault(e["trip_id"], []).append({
@@ -953,11 +963,15 @@ def buyer_insights() -> dict:
                          " features, metrics, notes from buyer_model_runs order by name").fetchall()
         scores = c.execute("select s.trip_id, t.driver_id, t.started_at, t.miles, s.features,"
                            " s.anomaly_score, s.anomaly_flagged, s.risk_probability,"
-                           " s.predicted_kwh_per_mi, s.actual_kwh_per_mi, s.scored_by"
+                           " s.predicted_kwh_per_mi, s.actual_kwh_per_mi, s.scored_by, t.source,"
+                           " t.match_id, t.vehicle_id"
                            " from buyer_trip_scores s join buyer_trips t on t.id = s.trip_id"
-                           " order by t.started_at desc").fetchall()
+                           " where not t.voided order by t.started_at desc").fetchall()
         drivers = c.execute("select driver_id, trips, risk_score, mean_probability"
                             " from buyer_driver_risk order by risk_score desc, driver_id").fetchall()
+        live = c.execute("select count(*) filter (where not voided) as live,"
+                         " count(*) filter (where voided) as voided from buyer_trips"
+                         " where source = 'booking'").fetchone()
     return {
         "simulated": True,
         "validated": False,
@@ -970,8 +984,10 @@ def buyer_insights() -> dict:
                         "anomalyFlagged": r["anomaly_flagged"],
                         "riskProbability": r["risk_probability"],
                         "predictedKwhPerMi": r["predicted_kwh_per_mi"],
-                        "actualKwhPerMi": r["actual_kwh_per_mi"], "scoredBy": r["scored_by"]}
+                        "actualKwhPerMi": r["actual_kwh_per_mi"], "scoredBy": r["scored_by"],
+                        "source": r["source"], "matchId": r["match_id"]}
                        for r in scores],
+        "liveBookingTrips": live["live"], "voidedBookingTrips": live["voided"],
         "driverRisk": [{"driverId": r["driver_id"], "trips": r["trips"],
                         "riskScore": r["risk_score"],
                         "meanProbability": r["mean_probability"]} for r in drivers],

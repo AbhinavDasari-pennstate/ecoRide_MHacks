@@ -123,6 +123,13 @@ export function BuyerModels({
         Models trained on simulated data, not validated. {data.disclaimer}
       </p>
 
+      <p className="buyer-live-link">
+        Trips from live bookings: <strong>{data.liveBookingTrips}</strong>
+        {data.voidedBookingTrips > 0 ? ` (${data.voidedBookingTrips} voided after cancellation)` : ""}.
+        Each confirmed ride adds one trip whose distance comes from the planned route. The driving
+        events and energy are generated from the booking, not recorded by a device.
+      </p>
+
       <div className="buyer-model-actions">
         <button
           className="buyer-download"
@@ -152,7 +159,10 @@ export function BuyerModels({
                   onClick={() => onSelectTrip(s.tripId)}
                   aria-label={`Inspect flagged trip ${s.tripId} by ${s.driverId}`}
                 >
-                  <span className="buyer-model-trip">{s.tripId}</span>
+                  <span className="buyer-model-trip">
+                    {s.tripId}
+                    {s.source === "booking" && <span className="buyer-live-tag">live booking</span>}
+                  </span>
                   <span className="buyer-model-meta">
                     {s.driverId} · {date.format(new Date(s.startedAt))}{" "}
                     {time.format(new Date(s.startedAt))}

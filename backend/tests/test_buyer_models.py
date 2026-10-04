@@ -107,12 +107,20 @@ def test_the_risk_score_scale_is_clamped():
     assert bm.risk_score_from_probability(-5) == 0 and bm.risk_score_from_probability(9) == 100
 
 
-def test_anomaly_scoring_degrades_quietly_without_the_model_file(monkeypatch, tmp_path):
+@pytest.fixture
+def fresh_forest():
+    """The loaded forest is cached per process, so these tests need the cache cleared both ways."""
+    bm.reset_forest_cache()
+    yield
+    bm.reset_forest_cache()
+
+
+def test_anomaly_scoring_degrades_quietly_without_the_model_file(monkeypatch, tmp_path, fresh_forest):
     monkeypatch.setattr(bm, "FOREST_FILE", tmp_path / "missing.joblib")
     assert bm.anomaly_score({f: 1.0 for f in bm.ANOMALY_FEATURES}) == (None, None)
 
 
-def test_anomaly_scoring_degrades_quietly_when_the_library_is_missing(monkeypatch):
+def test_anomaly_scoring_degrades_quietly_when_the_library_is_missing(monkeypatch, fresh_forest):
     real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
 
     def no_joblib(name, *args, **kwargs):
@@ -122,6 +130,17 @@ def test_anomaly_scoring_degrades_quietly_when_the_library_is_missing(monkeypatc
     monkeypatch.setitem(sys.modules, "joblib", None)
     monkeypatch.setattr("builtins.__import__", no_joblib)
     assert bm.anomaly_score({f: 1.0 for f in bm.ANOMALY_FEATURES}) == (None, None)
+
+
+def test_the_forest_is_loaded_once_and_then_cached(monkeypatch, fresh_forest):
+    loads = []
+    import joblib
+    real_load = joblib.load
+    monkeypatch.setattr(joblib, "load", lambda path: loads.append(path) or real_load(path))
+    features = {f: 1.0 for f in bm.ANOMALY_FEATURES}
+    bm.anomaly_score(features)
+    bm.anomaly_score(features)
+    assert len(loads) <= 1, "scoring must not re-read the model file on every trip"
 
 
 # ---------------------------------------------------------------- the committed fixture

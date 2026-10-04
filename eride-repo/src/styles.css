@@ -1282,3 +1282,30 @@
   font-size: 0.72rem;
   color: #736d55;
 }
+
+.buyer-live-link {
+  margin: 0 24px 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--forest);
+  border-radius: 0 9px 9px 0;
+  background: var(--sand);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: #4d4a3c;
+}
+.buyer-live-link strong {
+  font-size: 1.05rem;
+  color: var(--forest);
+}
+.buyer-live-tag {
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--lime);
+  color: var(--lime-foreground);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

@@ -115,6 +115,24 @@ def risk_score_from_probability(probability: float) -> int:
     return int(round(max(0.0, min(1.0, probability)) * 100))
 
 
+_forest: dict | None = None
+_forest_tried = False
+
+
+def _load_forest() -> dict | None:
+    """Load once per process. A missing file or library is expected, not an error."""
+    global _forest, _forest_tried
+    if not _forest_tried:
+        _forest_tried = True
+        try:
+            import joblib                  # noqa: PLC0415  (optional at runtime by design)
+            if FOREST_FILE.exists():
+                _forest = joblib.load(FOREST_FILE)
+        except Exception:
+            _forest = None
+    return _forest
+
+
 def anomaly_score(features: dict) -> tuple[float | None, bool | None]:
     """(score, flagged) from the saved isolation forest, or (None, None) when it cannot be loaded.
 
@@ -122,12 +140,17 @@ def anomaly_score(features: dict) -> tuple[float | None, bool | None]:
     unscored, so the API keeps working on a machine that never trained anything.
     """
     try:
-        import joblib                      # noqa: PLC0415  (optional at runtime by design)
-        if not FOREST_FILE.exists():
+        bundle = _load_forest()
+        if not bundle:
             return None, None
-        bundle = joblib.load(FOREST_FILE)
         values = [_row(features, bundle["features"])]
         score = float(bundle["model"].score_samples(values)[0])
         return round(score, 6), bool(bundle["model"].predict(values)[0] == -1)
     except Exception:
         return None, None
+
+
+def reset_forest_cache() -> None:
+    """Tests and a retrain need the next call to look at the file again."""
+    global _forest, _forest_tried
+    _forest, _forest_tried = None, False

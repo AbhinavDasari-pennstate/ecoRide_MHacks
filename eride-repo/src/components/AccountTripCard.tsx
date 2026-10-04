@@ -93,6 +93,12 @@ export function AccountTripCard({
             : "These are projected savings, not measured emissions."}
         </p>
       )}
+      {match?.status === "confirmed" && (
+        <p className="account-muted mt-2 text-xs">
+          This confirmed ride also sends one simulated telemetry trip to the data portal. The demo
+          data programme pays the car owner, so the fare above is what you pay and is unchanged.
+        </p>
+      )}
       {children && <div className="mt-6 flex flex-wrap gap-3">{children}</div>}
     </article>
   );

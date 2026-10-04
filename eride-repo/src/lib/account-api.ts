@@ -11,12 +11,20 @@ export type AccountVehicle = ApiVehicle & {
   lng: number;
   efficiency_source?: string;
 };
+export type DataEarnings = {
+  trips: number;
+  cents: number;
+  per_trip_cents: number;
+  simulated: boolean;
+  basis: string;
+};
 export type AccountDashboard = {
   user: { id: number; name: string; roles: string[] };
   trips: AccountTrip[];
   vehicles: AccountVehicle[];
   matches: ApiMatch[];
   impact: ImpactTotals;
+  data_earnings?: DataEarnings;
 };
 export type CampusImpact = ImpactTotals & { matches: number; ev_share: number };
 
@@ -126,6 +134,8 @@ export type TripScore = {
   predictedKwhPerMi: number | null;
   actualKwhPerMi: number | null;
   scoredBy: "fixture" | "runtime" | "unscored";
+  source?: "fixture" | "booking";
+  matchId?: number | null;
 };
 export type DriverRisk = {
   driverId: string;
@@ -140,6 +150,8 @@ export type BuyerInsights = {
   runs: ModelRun[];
   tripScores: TripScore[];
   driverRisk: DriverRisk[];
+  liveBookingTrips: number;
+  voidedBookingTrips: number;
 };
 
 export function useBuyerInsights(enabled: boolean) {

@@ -35,6 +35,8 @@ function score(over: Partial<TripScore> = {}): TripScore {
 const INSIGHTS: BuyerInsights = {
   simulated: true,
   validated: false,
+  liveBookingTrips: 0,
+  voidedBookingTrips: 0,
   disclaimer: "Models trained on simulated data. Not a validated safety score.",
   runs: [
     {
