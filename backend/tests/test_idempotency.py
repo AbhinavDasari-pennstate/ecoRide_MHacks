@@ -220,6 +220,21 @@ def test_the_initiation_webhook_marks_the_caller_as_on_the_line(database, monkey
     assert notify.call_guard(1)["reason"] == "already_on_this_call"
 
 
+def test_a_readiness_probe_does_not_count_as_a_call_in_progress(database):
+    """preflight.py checks this webhook. It must not then block an outbound test call."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with db.conn() as c:
+        c.execute("update users set phone = %s where id = 1", ("+19259677432",))
+    with TestClient(app, headers={"X-Api-Key": config.API_SERVICE_TOKEN}) as client:
+        body = client.post("/voice/initiation", json={"caller_id": "+19259677432", "probe": True}).json()
+    assert body["dynamic_variables"]["user_name"] == "Alex"      # the check still proves the path works
+    assert notify.call_guard(1) is None
+    with db.conn() as c:
+        assert c.execute("select count(*) as n from events where kind = %s",
+                         (notify.INBOUND_CALL,)).fetchone()["n"] == 0
+
+
 def test_an_unknown_caller_is_not_recorded_as_anyone(database):
     from fastapi.testclient import TestClient
     from app.main import app

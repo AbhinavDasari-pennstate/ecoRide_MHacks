@@ -1,9 +1,10 @@
 .env
 .env.*
 !.env.example
-# Local-only demo artifacts: credentials and message outboxes. Never commit these.
+# Local-only demo artifacts: credentials, message outboxes and run logs. Never commit these.
 *.local
 *.local.*
+.local-logs/
 .venv/
 __pycache__/
 *.pyc

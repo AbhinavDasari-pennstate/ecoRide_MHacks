@@ -2,5 +2,7 @@
   "ok": true,
   "planner": "deterministic",
   "maps": "offline",
-  "gemini": "missing"
+  "gemini": "missing",
+  "voice": "missing",
+  "sms": "missing"
 }

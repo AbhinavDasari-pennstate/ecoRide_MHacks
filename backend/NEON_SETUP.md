@@ -114,7 +114,7 @@ phone number or caller-provided user ID is not identity verification. Display na
 Trusted adapters read `GET /users/{id}/dashboard` for profile, trips, owned vehicles and matches and poll
 `/events?since=<last_id>` for updates. Use the routes in `README.md` for trip creation, acceptance, cancellation
 and owner approval. Webhook signature checking and Photon/ElevenLabs transport adapters still belong in the
-integration layer. There is no outbound message sender yet. A blank service token disables adapter access.
+integration layer. Texts and calls go out through `app/voice.py`; match notices sit behind `NOTIFY_ON_MATCH` and confirmation email behind the `SMTP_*` settings, both off until configured. A blank service token disables adapter access.
 In-process background planning is suitable for the hackathon; it is not a durable queue and should use one API worker.
 
 ## Assumptions checked on October 3, 2026

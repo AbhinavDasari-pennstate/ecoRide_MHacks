@@ -167,6 +167,9 @@ class CallIn(InputModel):
 class InitiationIn(BaseModel):
     # ElevenLabs also sends agent_id, called_number, call_sid and conversation_id; only the caller matters.
     caller_id: Optional[str] = None
+    # Set by scripts/preflight.py so a readiness check does not count as a call in progress.
+    # ElevenLabs never sends this.
+    probe: bool = False
 
 
 class PlannerRunIn(InputModel):
@@ -297,7 +300,8 @@ def voice_initiation(body: InitiationIn, actor=Depends(auth.require_service)):
     setup_voice.py registers the URL with the service token as its X-Api-Key header."""
     data = voice.initiation(body.caller_id)
     # Remember who is on the line, so call_rider cannot ring the caller back mid-call.
-    notify.record_inbound_call(data["dynamic_variables"].get("user_id"))
+    if not body.probe:
+        notify.record_inbound_call(data["dynamic_variables"].get("user_id"))
     return data
 
 

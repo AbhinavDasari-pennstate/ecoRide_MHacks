@@ -3,6 +3,7 @@ uvicorn
 pydantic
 psycopg[binary,pool]
 httpx
+httpx2          # scripts/setup_voice.py and scripts/preflight.py use it for the MCP client
 python-dotenv
 google-genai
 mcp>=2.3,<3

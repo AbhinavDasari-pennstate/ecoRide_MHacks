@@ -53,7 +53,7 @@ They must sign in again after approval. No shared or hardcoded passwords are shi
 
 Booking has three steps: enter trip details, review a match, and confirm. Each traveler accepts their own place, and the selected car's owner approves the booking. Pages reload state from the database and poll for updates. No compatible driver/car means a clear waiting state. Current pickup and destination choices cover Ann Arbor campus routes. Prices and environmental impacts are estimates; the app does not process payments.
 
-The buyer dataset is explicitly simulated: six drivers, 48 trips, one shared car. It is served by the buyer-only `/buyer/dataset` endpoint from `backend/fixtures/buyer_dataset.json`. Driver filters, event details, and JSON download work with that response. It is not a live telematics feed or a validated risk model.
+The buyer dataset is explicitly simulated: six drivers, 48 trips, one shared car. It is served by the buyer-only `/buyer/dataset` endpoint from the `buyer_trips` and `buyer_events` tables, which `scripts/load_buyer_dataset.py` fills from `backend/fixtures/buyer_dataset.json`. Driver filters, event details, and JSON download work with that response. It is not a live telematics feed or a validated risk model.
 
 ## Installable app
 

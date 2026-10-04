@@ -35,6 +35,9 @@ cd backend
 | `GEMINI_API_KEY` | optional; a Google AI Studio key (new keys start with `AQ.`); empty = deterministic planner only |
 | `MAPS_SERVER_KEY` | optional; needs **Routes API** and **Geocoding API** enabled; empty = estimates |
 | `PLANNER` | `gemini` (default; deterministic fallback without a key) or `deterministic` |
+| `VOICE_PLANNER` | planner for the phone path only, default `deterministic`. Gemini takes 5 to 20 seconds, which is a long silence on a call. Empty follows `PLANNER`. |
+| `NOTIFY_ON_MATCH` | `off` (default) or `on`. Texts travellers and the car owner once per real change. Notices always appear in the app. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` | optional; all five are needed to send confirmation email. Otherwise messages are appended to `EMAIL_OUTBOX` (default `backend/outbox.local.log`). |
 | `EXPLAIN` | `template` (default) or `gemini` |
 | `GEMINI_MODEL` | optional override, default `gemini-3.6-flash` (fast and available in an Oct 3 probe; 3.7/3.8 were overloaded) |
 | `GEMINI_BACKUP_MODEL` | optional, default `gemini-3.5-flash-lite`; used when the main model returns 429/5xx |
@@ -111,7 +114,7 @@ may use this token on other operations, but a browser session always takes prece
 
 | method | path | what it does |
 |---|---|---|
-| GET | `/health` | `{ok, planner, maps: live\|offline, gemini: configured\|missing}` |
+| GET | `/health` | `{ok, planner, maps: live\|offline, gemini, voice, sms: configured\|missing}` |
 | GET | `/ready` | Database connectivity and pending migration check; 503 if unavailable or not migrated |
 | POST | `/users` | Trusted adapter only: idempotent profile creation by `{provider, subject, name, roles, home_lat, home_lng, phone?}` |
 | POST | `/users/{id}/identities` | Trusted adapter links a verified `{provider, subject}` to an existing account |
@@ -128,6 +131,7 @@ may use this token on other operations, but a browser session always takes prece
 | POST | `/bookings/{id}/approve` | owner approves |
 | POST | `/bookings/{id}/decline` | owner declines; the match replans without that car |
 | POST | `/planner/run` | `{trip_id?, match_id?, plan?, dry_run?, mode?}`: plan, recover an at-risk match, or validate a manual plan |
+| GET | `/me/notifications` | The signed-in account's own ride notices, newest first; shown whether or not a text went out |
 | GET | `/impact` | Public. Projected totals over proposed/confirmed matches plus EPA equivalents; not measured completed-trip savings |
 | GET | `/events?since=` | event log after id `since` (poll it for a live feed) |
 | GET | `/agent-runs` | one row per planning run: planner, raw Gemini output, validator errors, retries, latency, fallback |
