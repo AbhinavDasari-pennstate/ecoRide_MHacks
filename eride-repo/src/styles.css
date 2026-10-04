@@ -1245,20 +1245,58 @@
 .buyer-model-features {
   color: #736d55;
 }
-.buyer-energy-chart {
-  position: relative;
+.buyer-energy-plot {
+  display: grid;
+  grid-template-columns: 1.1rem 2.5rem 1fr;
+  grid-template-rows: 220px auto;
+  gap: 0 7px;
   margin-top: 16px;
-  height: 220px;
+}
+.buyer-energy-ylabel {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+  justify-self: center;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.72rem;
+  color: #736d55;
+  white-space: nowrap;
+}
+.buyer-energy-yticks {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 1px 0;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: #736d55;
+}
+.buyer-energy-chart {
+  grid-column: 3;
+  grid-row: 1;
+  position: relative;
+  height: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: linear-gradient(var(--sand), var(--cream));
   overflow: hidden;
 }
+/* y = x, bottom left to top right. preserveAspectRatio="none" stretches it to the box, and the
+   non-scaling stroke keeps the line one pixel wide whatever shape that box is. */
 .buyer-energy-ideal {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top right, transparent calc(50% - 1px), #999e7b calc(50% - 1px), #999e7b calc(50% + 1px), transparent calc(50% + 1px));
-  opacity: 0.6;
+  width: 100%;
+  height: 100%;
+}
+.buyer-energy-ideal line {
+  stroke: #999e7b;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
 }
 .buyer-energy-dot {
   position: absolute;
@@ -1269,12 +1307,25 @@
   background: var(--forest);
   border: 1px solid var(--cream);
 }
-.buyer-energy-axes {
+.buyer-energy-xaxis {
+  grid-column: 3;
+  grid-row: 2;
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: #736d55;
+}
+.buyer-energy-xlabel {
+  font-size: 0.72rem;
+}
+.buyer-energy-legend {
   margin-top: 8px;
   font-size: 0.72rem;
+  line-height: 1.5;
   color: #736d55;
 }
 .buyer-model-footnote {

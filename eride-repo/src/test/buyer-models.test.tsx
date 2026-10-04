@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BuyerModels, toCsv } from "@/components/BuyerModels";
+import { BuyerModels, extraDisclaimer, toCsv } from "@/components/BuyerModels";
 import { BuyerPortal } from "@/routes/buyer";
 import * as sample from "@/lib/buyerData";
 import type { BuyerInsights, TripScore } from "@/lib/account-api";
@@ -128,6 +128,63 @@ describe("Buyer models section", () => {
     expect(
       screen.getByRole("img", { name: /Predicted against actual kilowatt hours per mile/ }),
     ).toBeInTheDocument();
+  });
+
+  it("draws the perfect prediction line as y = x, bottom left to top right", () => {
+    const { container } = render(<BuyerModels data={INSIGHTS} onSelectTrip={() => {}} />);
+    const line = container.querySelector(".buyer-energy-ideal line");
+    expect(line).not.toBeNull();
+    // In SVG coordinates y grows downwards, so bottom left is (0,100) and top right is (100,0).
+    expect(line!.getAttribute("x1")).toBe("0");
+    expect(line!.getAttribute("y1")).toBe("100");
+    expect(line!.getAttribute("x2")).toBe("100");
+    expect(line!.getAttribute("y2")).toBe("0");
+    const svg = container.querySelector(".buyer-energy-ideal");
+    expect(svg!.getAttribute("viewBox")).toBe("0 0 100 100");
+    expect(svg!.getAttribute("preserveAspectRatio")).toBe("none");
+  });
+
+  it("labels both axes and shows the same range on each", () => {
+    const { container } = render(<BuyerModels data={INSIGHTS} onSelectTrip={() => {}} />);
+    expect(screen.getByText("predicted kWh per mile")).toBeInTheDocument();
+    expect(screen.getByText("actual kWh per mile")).toBeInTheDocument();
+    // A point on the diagonal means predicted equals actual, which only reads correctly if both
+    // axes cover the same range.
+    const yTicks = [...container.querySelectorAll(".buyer-energy-yticks span")].map((n) => n.textContent);
+    const xTicks = [...container.querySelectorAll(".buyer-energy-xaxis span")]
+      .map((n) => n.textContent)
+      .filter((t) => t !== "actual kWh per mile");
+    expect(yTicks).toEqual([...xTicks].reverse());
+    expect(screen.getByText(/The diagonal is a perfect prediction/)).toBeInTheDocument();
+  });
+
+  it("puts a point above the diagonal when the prediction was high", () => {
+    const high = score({ tripId: "TR-HI", actualKwhPerMi: 0.22, predictedKwhPerMi: 0.3 });
+    const { container } = render(
+      <BuyerModels data={{ ...INSIGHTS, tripScores: [high] }} onSelectTrip={() => {}} />,
+    );
+    const dot = container.querySelector(".buyer-energy-dot") as HTMLElement;
+    // left tracks actual, bottom tracks predicted, so predicting high sits above the line.
+    expect(parseFloat(dot.style.bottom)).toBeGreaterThan(parseFloat(dot.style.left));
+  });
+
+  it("states the simulated data warning once, not twice", () => {
+    render(<BuyerModels data={INSIGHTS} onSelectTrip={() => {}} />);
+    const banner = screen.getByRole("note").textContent ?? "";
+    const occurrences = banner.toLowerCase().split("models trained on simulated data").length - 1;
+    expect(occurrences).toBe(1);
+    expect(banner).toContain("Models trained on simulated data, not validated.");
+    // The rest of the backend disclaimer is still shown, so no information is lost.
+    expect(banner).toContain("Not a validated safety score.");
+  });
+
+  it("keeps the whole disclaimer when it does not repeat the banner", () => {
+    expect(extraDisclaimer("Models trained on simulated data. No real telemetry was used."))
+      .toBe("No real telemetry was used.");
+    expect(extraDisclaimer("models trained on simulated data, Not validated outside this set."))
+      .toBe("Not validated outside this set.");
+    expect(extraDisclaimer("Something else entirely.")).toBe("Something else entirely.");
+    expect(extraDisclaimer("")).toBe("");
   });
 
   it("explains how each score is computed only when asked", () => {

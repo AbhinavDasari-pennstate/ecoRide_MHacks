@@ -76,6 +76,15 @@ function download(name: string, body: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * The banner already states that the models are trained on simulated data and not validated, and
+ * the backend disclaimer opens with the same sentence. Drop that opening so the warning is made
+ * once, and keep the rest of it, which says more.
+ */
+export function extraDisclaimer(disclaimer: string): string {
+  return disclaimer.replace(/^\s*models?\s+trained\s+on\s+simulated\s+data[.,]?\s*/i, "").trim();
+}
+
 function metric(run: ModelRun | undefined, key: string): string {
   const value = run?.metrics?.[key];
   return value === undefined || value === null ? "n/a" : String(value);
@@ -120,7 +129,7 @@ export function BuyerModels({
 
       <p className="buyer-model-banner" role="note">
         <CircleAlert size={15} aria-hidden="true" />
-        Models trained on simulated data, not validated. {data.disclaimer}
+        Models trained on simulated data, not validated. {extraDisclaimer(data.disclaimer)}
       </p>
 
       <p className="buyer-live-link">
@@ -235,28 +244,47 @@ export function BuyerModels({
             figures in this dataset follow a fixed formula, so a strong fit shows the regression
             recovered that formula, not that it would predict a real car.
           </p>
-          <div
-            className="buyer-energy-chart"
-            role="img"
-            aria-label={`Predicted against actual kilowatt hours per mile for ${energyPoints.length} simulated trips`}
-          >
-            <span className="buyer-energy-ideal" />
-            {energyPoints.map((s) => (
-              <span
-                key={s.tripId}
-                className="buyer-energy-dot"
-                style={{
-                  left: `${pos(s.actualKwhPerMi!)}%`,
-                  bottom: `${pos(s.predictedKwhPerMi!)}%`,
-                }}
-                title={`${s.tripId}: actual ${s.actualKwhPerMi!.toFixed(3)}, predicted ${s.predictedKwhPerMi!.toFixed(3)}`}
-              />
-            ))}
+          <div className="buyer-energy-plot">
+            <span className="buyer-energy-ylabel">predicted kWh per mile</span>
+            <div className="buyer-energy-yticks" aria-hidden="true">
+              <span>{hi.toFixed(2)}</span>
+              <span>{lo.toFixed(2)}</span>
+            </div>
+            <div
+              className="buyer-energy-chart"
+              role="img"
+              aria-label={`Predicted against actual kilowatt hours per mile for ${energyPoints.length} simulated trips. Both axes run from ${lo.toFixed(2)} to ${hi.toFixed(2)} and the diagonal is a perfect prediction.`}
+            >
+              {/* y = x, corner to corner. An SVG stays exact whatever shape the box is. */}
+              <svg
+                className="buyer-energy-ideal"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <line x1="0" y1="100" x2="100" y2="0" vectorEffect="non-scaling-stroke" />
+              </svg>
+              {energyPoints.map((s) => (
+                <span
+                  key={s.tripId}
+                  className="buyer-energy-dot"
+                  style={{
+                    left: `${pos(s.actualKwhPerMi!)}%`,
+                    bottom: `${pos(s.predictedKwhPerMi!)}%`,
+                  }}
+                  title={`${s.tripId}: actual ${s.actualKwhPerMi!.toFixed(3)}, predicted ${s.predictedKwhPerMi!.toFixed(3)}`}
+                />
+              ))}
+            </div>
+            <div className="buyer-energy-xaxis">
+              <span aria-hidden="true">{lo.toFixed(2)}</span>
+              <span className="buyer-energy-xlabel">actual kWh per mile</span>
+              <span aria-hidden="true">{hi.toFixed(2)}</span>
+            </div>
           </div>
-          <div className="buyer-energy-axes">
-            <span>actual kWh per mile, {lo.toFixed(2)} to {hi.toFixed(2)}</span>
-            <span>the line is a perfect prediction</span>
-          </div>
+          <p className="buyer-energy-legend">
+            The diagonal is a perfect prediction. A point above it was predicted high, below it low.
+          </p>
           <button className="buyer-model-how" onClick={() => setOpen(open === "e" ? null : "e")}>
             <Info size={13} /> How the fit is measured
           </button>
