@@ -318,7 +318,7 @@ def vehicle_reasons(options: list[dict], chosen_id: Optional[int]) -> list[str]:
     if not chosen:
         return []
     best = next((o for o in options if o["feasible"]), None)
-    reason = "lowest CO2 of the feasible vehicles" if chosen is best else "traveler-selected feasible vehicle"
+    reason = "lowest CO2 of the feasible vehicles" if chosen is best else "selected feasible vehicle"
     out = [f"{chosen['make_model']} ({chosen['fuel_type'].upper() if chosen['fuel_type'] == 'ev' else 'gas'}) "
            f"chosen: {reason} at {chosen['kg_co2']:.1f} kg for this trip"]
     for o in options:
