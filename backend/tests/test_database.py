@@ -28,7 +28,7 @@ def database(postgres, monkeypatch):
     monkeypatch.setattr(config, "DATABASE_URL", "local")
     monkeypatch.setattr(config, "MAPS_SERVER_KEY", "")
     monkeypatch.setattr(config, "GEMINI_API_KEY", "")
-    monkeypatch.setattr(config, "API_SERVICE_TOKEN", "")
+    monkeypatch.setattr(config, "API_SERVICE_TOKEN", "test-service-secret")
     monkeypatch.setattr(config, "PLANNER", "deterministic")
     monkeypatch.setattr(config, "EXPLAIN", "template")
     maps._dist_mem.clear()
@@ -132,7 +132,7 @@ def test_invalid_vehicle_data_rejected_by_postgres(database, field, value):
 
 
 def test_identity_idempotency_linking_and_dashboard(database):
-    with TestClient(app) as client:
+    with TestClient(app, headers={"Authorization": f"Bearer {config.API_SERVICE_TOKEN}"}) as client:
         body = {"provider": "web", "subject": "student-1", "name": "Alex", "roles": ["driver"],
                 "home_lat": 42.28, "home_lng": -83.74}
         first = client.post("/users", json=body)
@@ -190,7 +190,7 @@ def test_failed_replan_keeps_disruption_persisted(database, monkeypatch):
     assert after["status"] == "at_risk" and after["booking"]["status"] == "cancelled"
     assert apply.impact_summary()["matches"] == 0
     monkeypatch.setattr(apply, "run_planning", original)
-    with TestClient(app) as client:
+    with TestClient(app, headers={"Authorization": f"Bearer {config.API_SERVICE_TOKEN}"}) as client:
         result = client.post("/planner/run", json={"match_id": before["id"], "mode": "deterministic"})
         assert result.status_code == 200
         assert client.get(f"/matches/{before['id']}").json()["status"] == "proposed"
@@ -245,7 +245,7 @@ def test_web_demo_survives_reload_and_restart_preserves_other_accounts(database)
     # Keep the unrelated request out of the grocery group.
     with db.conn() as c:
         c.execute("update trips set dest_lat = 41 where id = %s", (other["id"],))
-    with TestClient(app) as client:
+    with TestClient(app, headers={"Authorization": f"Bearer {config.API_SERVICE_TOKEN}"}) as client:
         meta = client.post("/demo/bootstrap").json()
         uid = next(u["id"] for u in meta["users"] if u["alias"] == "alex")
         first = client.post("/demo/trips")
@@ -262,7 +262,7 @@ def test_web_demo_survives_reload_and_restart_preserves_other_accounts(database)
 
 def test_web_vehicle_selection_validates_and_reopens_confirmation(database):
     before = proposed(database)
-    with TestClient(app) as client:
+    with TestClient(app, headers={"Authorization": f"Bearer {config.API_SERVICE_TOKEN}"}) as client:
         mid = before["id"]
         assert client.post(f"/matches/{mid}/vehicle", json={"vehicle_id": 99999}).status_code == 422
         assert client.get(f"/matches/{mid}").json()["status"] == "confirmed"

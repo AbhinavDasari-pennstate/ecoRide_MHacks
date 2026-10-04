@@ -8,6 +8,7 @@ import math
 import sys
 import traceback
 import warnings
+from uuid import uuid4
 from collections import Counter
 from datetime import timedelta
 from pathlib import Path
@@ -58,6 +59,9 @@ def run(mode: str, *, allow_remote_reset=False) -> dict:
     print(f"\n=== planner: {mode} (gemini key {'set' if config.GEMINI_API_KEY else 'missing'},"
           f" maps {'live' if config.MAPS_SERVER_KEY else 'offline'}) ===")
     config.PLANNER = mode
+    # This CLI runs its own in-process app; give its client an explicit private
+    # adapter token without introducing any unauthenticated server bypass.
+    config.API_SERVICE_TOKEN = config.API_SERVICE_TOKEN or uuid4().hex
     s = seed.reset(allow_remote_reset=allow_remote_reset)
     U, V = s["users"], s["vehicles"]
     w0 = s["window_start"].isoformat()

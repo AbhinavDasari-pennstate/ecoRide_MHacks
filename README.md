@@ -1,85 +1,78 @@
 # ERIDE
 
-The React app in `eride-repo/` uses the FastAPI backend in `backend/` and its configured PostgreSQL database
-(Neon or local). Trip state, prices, emissions, confirmations, bookings and activity come from the backend.
+A campus ride-sharing app with email/password accounts, shared-trip booking, an owner workspace, and an approved-buyer data portal.
 
-## Run locally on Windows
+## Start locally (Windows)
 
-From this repository, use two PowerShell terminals. Dependencies are already installed in the current checkout.
-
-**Backend**
-
-```powershell
-cd backend
-..\.venv\Scripts\python scripts/migrate.py
-..\.venv\Scripts\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-**Frontend**
-
-```powershell
-cd eride-repo
-npm.cmd run dev -- --host 127.0.0.1 --port 5173
-```
-
-Open **http://localhost:5173**. API documentation is at **http://localhost:8000/docs**.
-If a port is already in use, use the existing server or stop it before starting another.
-
-For a fresh checkout, install dependencies first:
+Install dependencies once, using Python 3.11+ and Node 22.12+:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
-if (-not (Test-Path backend/.env)) { Copy-Item backend/.env.example backend/.env }
 cd eride-repo
 npm.cmd exec --yes --package=bun -- bun install --frozen-lockfile
+cd ..
 ```
 
-Keep database URLs and API keys in `backend/.env`. The Vite development server proxies `/api/*` to
-`http://127.0.0.1:8000`, forwarding `API_SERVICE_TOKEN` from the backend environment on the server only.
-No database credentials or service tokens belong in `VITE_*` settings or browser code.
-To use a different backend locally, set the frontend server's `BACKEND_URL` environment variable.
+Backend terminal, from the repository root:
 
-## Connected demo
+```powershell
+New-Item -ItemType Directory -Force .local | Out-Null
+$env:DATABASE_URL='local'
+$env:LOCAL_DATABASE_PATH=Join-Path (Get-Location) '.local\postgres'
+cd backend
+..\.venv\Scripts\python scripts/migrate.py
+..\.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips '127.0.0.1,::1'
+```
 
-Opening the app provisions seven explicitly identified demo accounts and four cars if missing. It does not
-truncate the database or replace existing application records. Starting the guided trip creates real requests
-for Alex, Maya and Jordan. The planner selects a feasible group and car, and the UI displays its actual results.
+Frontend terminal, from the repository root:
 
-- Accept separately for each traveler, then approve as the current vehicle owner.
-- Choosing another vehicle or cancelling the current one recalculates the plan and requires new confirmations.
-- Reloading any page restores the trip, booking, prices and impact from the database.
-- The profile activity feed polls persisted events. Messages are presentation bubbles reconstructed by the guided steps.
-- **Restart demo** (or Shift+R) cancels requests belonging to the demo identities and restores their vehicle availability.
-  It retains historical rows and events. All browser tabs share this same demonstration scenario.
+```powershell
+cd eride-repo
+$env:BACKEND_URL='http://127.0.0.1:8001'
+npm.cmd run dev -- --host 127.0.0.1 --port 5174 --strictPort
+```
 
-The voice transcript and phone panels are explicitly labeled simulations. Their actions make real API calls;
-they do not send actual iMessages or use live speech recognition. The map shows the backend's pickup stops as a
-schematic. Missing Maps/Gemini keys use estimated routes and the deterministic planner.
+Open [ERIDE](http://127.0.0.1:5174). The isolated database lives in the ignored `.local/postgres` directory. API documentation is at [localhost:8001/docs](http://127.0.0.1:8001/docs).
 
-The role-switching controls are for this local hackathon demo, not user authentication. Before a public deployment,
-add authenticated per-user authorization and gate demo controls. The production frontend needs an authenticated
-reverse proxy for `/api` (the Vite proxy is development-only), or an appropriately secured `VITE_API_BASE_URL`.
+## Accounts and booking
+
+The home screen introduces shared travel and starts with **Book a trip**. Guests sign up or sign in, then return to booking. Passwords use scrypt hashing; sessions use revocable HttpOnly cookies. Authorization is enforced by the backend on every private route.
+
+- **Rider:** request a trip, offer to drive a shared car, review matches and estimates, confirm or cancel their own place, and see their trips.
+- **Car owner:** all rider features plus their own car listings, availability, and approval/decline of bookings for their vehicles.
+- **Data buyer:** the protected Data Portal. Buyer access is assigned by an operator; it cannot be selected at signup.
+
+To approve an existing buyer account, run in the backend terminal with the same database settings:
+
+```powershell
+..\.venv\Scripts\python scripts/grant_buyer.py buyer@example.com
+```
+
+They must sign in again after approval. No shared or hardcoded passwords are shipped. Email verification and password recovery are not yet implemented.
+
+Booking has three steps: enter trip details, review a match, and confirm. Each traveler accepts their own place, and the selected car's owner approves the booking. Pages reload state from the database and poll for updates. No compatible driver/car means a clear waiting state. Current pickup and destination choices cover Ann Arbor campus routes. Prices and environmental impacts are estimates; the app does not process payments.
+
+The buyer dataset is explicitly simulated: six drivers, 48 trips, one shared car. It is served by the buyer-only `/buyer/dataset` endpoint from `backend/fixtures/buyer_dataset.json`. Driver filters, event details, and JSON download work with that response. It is not a live telematics feed or a validated risk model.
+
+## Installable app
+
+ERIDE includes a manifest, app icons, an install prompt where supported, iPhone/iPad install guidance, and an offline page. Booking and account operations require an internet connection. The service worker caches only public offline assets; it never caches account API data or private pages.
+
+For phone installation, deploy behind **HTTPS**. Route `/api/*` to FastAPI with the prefix removed, forward cookies, set `SESSION_COOKIE_SECURE=true`, and set `CORS_ORIGINS` to the exact frontend origin. The Vite proxy is for local development only. Configure a production reverse proxy to overwrite forwarded IP/protocol headers and trust only that proxy in Uvicorn. Do not forward a shared service token for browser requests. Keep `API_SERVICE_TOKEN`, database URLs, and API keys out of browser code and `VITE_*` settings.
 
 ## Checks
 
 ```powershell
-# From backend/
+# backend/
 ..\.venv\Scripts\python -m pytest -q
 
-# From eride-repo/
+# eride-repo/
 npm.cmd test
 node node_modules/typescript/bin/tsc --noEmit
 npm.cmd run build
-
-# Optional integration check against both running servers; writes to demo accounts only
-$env:LIVE_API_URL='http://localhost:5173'
-npm.cmd test
-Remove-Item Env:LIVE_API_URL
 ```
 
-The live test creates a trip, accepts travelers, approves the owner, restores data from the dashboard,
-cancels the vehicle and confirms the replacement. It leaves a confirmed replacement trip available to inspect.
-Use **Restart demo** for a fresh presentation.
+The legacy opt-in demo integration test is skipped by default; browser demo impersonation is no longer supported. Backend tests cover authenticated ownership, booking, session expiry/revocation, buyer access, and throttling. Frontend tests cover role guards, expired-session cleanup, booking states, portal filters, and offline cache boundaries.
 
-See [backend setup](backend/NEON_SETUP.md) for Neon provisioning and the database contract.
+See [backend setup](backend/README.md) for account/security details and [database setup](backend/NEON_SETUP.md) for Neon configuration.

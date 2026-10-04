@@ -1,414 +1,553 @@
-import { useEffect } from "react";
+import { useState, type FormEvent } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ArrowRight, Check, ChevronRight, Fuel, Mic, X, Zap } from "lucide-react";
-import { useMainTrip, useStore, userById, MAIN_TRIP } from "@/lib/store";
-import * as api from "@/lib/api";
-import * as d from "@/lib/demo";
-import { Avatar, Card, Eyebrow, RouteMap, StatusPill } from "@/components/kit";
-import { Phone } from "@/components/Phone";
-import { ImpactSummary } from "@/components/Impact";
-import { TripCard } from "@/components/TripCard";
-import { cn } from "@/lib/utils";
+import { ArrowLeft, ArrowRight, Check, Clock3, Leaf, MapPin, RefreshCw } from "lucide-react";
+import {
+  accountRequest,
+  useAccountDashboard,
+  useSession,
+  type AccountTrip,
+} from "@/lib/account-api";
+import { AccountTripCard } from "@/components/AccountTripCard";
+import { campusDay, campusTime } from "@/lib/backend";
 
-const STEPS = [
-  {
-    label: "Trip request",
-    title: "Tell ERIDE where you're headed.",
-    sub: "Try the guided conversation. Your request is saved to the database.",
+export const Route = createFileRoute("/trip/$step")({
+  validateSearch: (search: Record<string, unknown>): { trip?: number | undefined } => {
+    const trip = Number(search["trip"]);
+    return Number.isSafeInteger(trip) && trip > 0 ? { trip } : {};
   },
-  {
-    label: "Matching",
-    title: "Travel together.",
-    sub: "Compatible travelers and feasible vehicles are selected by the backend.",
-  },
-  {
-    label: "Vehicle selection",
-    title: "Choose your shared vehicle.",
-    sub: "Compare feasible options using the calculated route, price and emissions.",
-  },
-  {
-    label: "Traveler confirmations",
-    title: "Everyone gets a say.",
-    sub: "Each acceptance updates the same trip record.",
-  },
-  {
-    label: "Owner approval",
-    title: "The owner approves the rental.",
-    sub: "The trip confirms once all travelers and the current vehicle owner approve.",
-  },
-  {
-    label: "Impact summary",
-    title: "See the difference sharing makes.",
-    sub: "Projected savings, calculated from this trip and its vehicle.",
-  },
-  {
-    label: "Disruption",
-    title: "Keep the group moving.",
-    sub: "Cancel the vehicle to find a replacement. Everyone reviews the changed plan.",
-  },
+  component: BookingFlow,
+});
+
+const PICKUPS = [
+  { name: "Central campus · Michigan Union", lat: 42.275, lng: -83.7413 },
+  { name: "North campus · Pierpont Commons", lat: 42.2919, lng: -83.7178 },
 ];
-export const Route = createFileRoute("/trip/$step")({ component: Flow });
-const button =
-  "rounded-full bg-primary px-5 py-3 font-semibold text-primary-foreground disabled:opacity-40";
+const DESTINATIONS = [
+  { name: "Meijer (Ann Arbor-Saline Rd)", lat: 42.2394, lng: -83.766 },
+  { name: "Michigan Union · Central campus", lat: 42.275, lng: -83.7413 },
+];
+function tomorrow() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
-function Flow() {
+export function BookingFlow() {
   const { step } = Route.useParams();
-  const nav = useNavigate();
-  const n = step === "done" ? 8 : Math.min(7, Math.max(1, Number(step) || 1));
-  const busy = useStore((s) => s.busy || s.ui.voiceBusy);
-  const t = useMainTrip();
-  const locked = busy || !t;
-  const go = (k: number) =>
-    nav({ to: "/trip/$step", params: { step: k >= 8 ? "done" : String(k) } });
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("input,textarea,button,[role=dialog]")) return;
-      if (e.code === "Space" && n === 1 && !t) {
-        e.preventDefault();
-        void api.perform(d.advanceVoice);
-      } else if (e.key === "ArrowRight" && !locked && n < 8) void go(n + 1);
-      else if (e.key === "ArrowLeft" && n > 1) void go(n - 1);
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  });
-  if (n === 8) return <Done />;
-  const s = STEPS[n - 1]!;
-  return (
-    <div className="flex flex-1 flex-col">
-      <div className="px-6 md:px-10">
-        <div className="flex justify-between text-sm">
-          <span>
-            Step {n} of 7: {s.label}
-          </span>
-          <Link to="/" className="flex gap-1">
-            <X className="size-4" /> Exit
-          </Link>
-        </div>
-        <div className="mt-2 h-1 rounded-full bg-muted">
-          <div className="h-full rounded-full bg-green" style={{ width: `${(n / 7) * 100}%` }} />
-        </div>
-      </div>
-      <main key={n} className="mx-auto w-full max-w-6xl flex-1 px-6 pb-32 pt-10 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight md:text-5xl">{s.title}</h1>
-        <p className="mx-auto mt-3 max-w-xl text-lg text-muted-foreground">{s.sub}</p>
-        <div className="mt-10">
-          {n === 1 && <StepVoice />}
-          {n === 2 && <StepMatching />}
-          {n === 3 && <StepVehicles />}
-          {n === 4 && <StepRider />}
-          {n === 5 && <StepOwner />}
-          {n === 6 && <ImpactSummary />}
-          {n === 7 && <StepDisruption />}
-        </div>
-      </main>
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95">
-        <div className="mx-auto flex max-w-6xl justify-between px-6 py-4">
-          <button
-            onClick={() => (n > 1 ? void go(n - 1) : void nav({ to: "/" }))}
-            className="flex items-center gap-2 px-5"
-          >
-            <ArrowLeft className="size-4" /> Back
-          </button>
-          <button
-            disabled={locked}
-            onClick={() => void go(n + 1)}
-            className={cn(button, "flex items-center gap-2")}
-          >
-            {n === 7 ? "View trip" : "Continue"}
-            <ArrowRight className="size-4" />
-          </button>
-        </div>
-      </div>
-    </div>
+  const { trip: tripId } = Route.useSearch();
+  const navigate = useNavigate();
+  const user = useSession().data?.user;
+  const dashboard = useAccountDashboard(user?.id);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [pickupIndex, setPickupIndex] = useState(0);
+  const [destinationIndex, setDestinationIndex] = useState(0);
+  const [date, setDate] = useState(tomorrow);
+  const [time, setTime] = useState("14:00");
+  const [role, setRole] = useState<"passenger" | "driver">("passenger");
+  const [partySize, setPartySize] = useState(1);
+  const trip = dashboard.data?.trips.find((row) => row.id === tripId && row.user_id === user?.id);
+  const match = dashboard.data?.matches.find(
+    (row) =>
+      row.status !== "cancelled" &&
+      row.members.some((member) => member.trip_id === trip?.id && member.status !== "cancelled"),
   );
-}
-function StepVoice() {
-  const step = useStore((s) => s.ui.voiceLine);
-  const busy = useStore((s) => s.busy || s.ui.voiceBusy);
-  const t = useMainTrip();
-  return (
-    <div className="mx-auto max-w-2xl space-y-5 text-left">
-      <Card>
-        <div className="flex items-center gap-3">
-          <Mic />
-          <div>
-            <Eyebrow>Conversation simulation</Eyebrow>
-            <h2 className="text-lg font-bold">ERIDE Assistant</h2>
-          </div>
-        </div>
-        <div className="my-8 space-y-4">
-          {d.SCRIPT.slice(0, step).map((l, i) => (
-            <div key={i} className={l.who === "user" ? "text-right" : ""}>
-              <span className="inline-block max-w-[90%] rounded-2xl bg-sand px-4 py-3">
-                {l.text}
-              </span>
-            </div>
-          ))}
-        </div>
-        {!t && (
-          <button
-            disabled={busy}
-            onClick={() => void api.perform(d.advanceVoice)}
-            className={cn(button, "flex items-center gap-2")}
-          >
-            {busy ? "Creating trip?" : "Next line"}
-            <ChevronRight className="size-4" />
-          </button>
-        )}
-        {t && (
-          <div className="flex items-center gap-3 text-primary">
-            <Check /> Saved: {t.destination}, {t.day} {t.departure}
-          </div>
-        )}
-      </Card>
-      {t && <TripCard t={t} />}
-    </div>
+  const me = match?.members.find(
+    (member) => member.user_id === user?.id && member.trip_id === trip?.id,
   );
-}
-function StepMatching() {
-  const t = useMainTrip();
-  const busy = useStore((s) => s.busy);
-  useEffect(() => {
-    void api.perform(d.ensureMatches);
-  }, []);
+  const currentStep = step === "1" ? 1 : step === "3" || step === "done" ? 3 : 2;
+  const go = (next: string, id = tripId) =>
+    navigate({ to: "/trip/$step", params: { step: next }, search: id ? { trip: id } : {} });
+
+  async function act(operation: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await operation();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Something went wrong. Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!user) return;
+    await act(async () => {
+      const departure = new Date(`${date}T${time}`);
+      if (!Number.isFinite(departure.getTime()) || departure.getTime() <= Date.now())
+        throw new Error("Choose a departure time in the future.");
+      const pickup = PICKUPS[pickupIndex]!;
+      const destination = DESTINATIONS[destinationIndex]!;
+      if (pickup.lat === destination.lat && pickup.lng === destination.lng)
+        throw new Error("Choose a destination different from your pickup point.");
+      const result = await accountRequest<{ trip: AccountTrip }>("/trips", {
+        method: "POST",
+        body: {
+          user_id: user.id,
+          role,
+          dest_name: destination.name,
+          origin_lat: pickup.lat,
+          origin_lng: pickup.lng,
+          dest_lat: destination.lat,
+          dest_lng: destination.lng,
+          window_start: departure.toISOString(),
+          window_end: new Date(departure.getTime() + 45 * 60_000).toISOString(),
+          party_size: partySize,
+          needs_vehicle: role === "driver",
+          max_detour_mi: 2,
+        },
+      });
+      await dashboard.refetch();
+      await go("2", result.trip.id);
+    });
+  }
+  async function refreshMatch() {
+    if (!trip) return;
+    await act(async () => {
+      await accountRequest(`/trips/${trip.id}/plan`, { method: "POST" });
+      await dashboard.refetch();
+      setNotice("Your trip has been checked for available rides.");
+    });
+  }
+
   return (
-    <div className="grid gap-6 text-left lg:grid-cols-2">
-      <div className="space-y-3">
-        {t?.participants.map((p) => (
-          <Card key={p.userId}>
-            <div className="flex items-center gap-3">
-              <Avatar id={p.userId} />
-              <div className="flex-1">
-                <b>{userById(p.userId).name}</b>
-                <p>
-                  {p.role}
-                  {p.matchPct != null && ` ? ${p.matchPct}% match`}
-                </p>
-              </div>
-              <StatusPill status={p.status} />
-            </div>
-          </Card>
+    <main className="account-page pb-20">
+      <div className="mb-8 flex items-center justify-between gap-4 text-sm">
+        <Link to="/" className="account-muted inline-flex items-center gap-2">
+          <ArrowLeft className="size-4" />
+          Home
+        </Link>
+        <span className="account-muted">
+          {currentStep === 1 ? "Your journey starts here" : `Trip #${tripId ?? "—"}`}
+        </span>
+      </div>
+      <ol aria-label="Booking progress" className="mb-9 grid grid-cols-3 gap-3">
+        {["Your trip", "Find a ride", "Confirm"].map((label, i) => (
+          <li
+            key={label}
+            aria-current={currentStep === i + 1 ? "step" : undefined}
+            className={`border-t-2 pt-3 text-xs font-semibold sm:text-sm ${currentStep >= i + 1 ? "border-primary text-primary" : "border-border text-muted-foreground"}`}
+          >
+            <span className="mr-2">0{i + 1}</span>
+            {label}
+          </li>
         ))}
-        <p className="text-muted-foreground">{t?.explanation ?? "Finding compatible trips?"}</p>
-        <button
-          disabled={busy}
-          className={button}
-          onClick={() => void api.perform(() => api.find_matches(MAIN_TRIP))}
-        >
-          Retry matching
-        </button>
-      </div>
-      <Card>
-        <RouteMap />
-        <p className="mt-3 text-xs text-muted-foreground">
-          {t?.distanceSource === "estimate"
-            ? "Estimated route; no live road data"
-            : "Pickup route from the backend"}
+      </ol>
+      <header className="mb-8 max-w-2xl">
+        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+          {currentStep === 1
+            ? "Where are we going?"
+            : match?.status === "confirmed"
+              ? "You're all set."
+              : currentStep === 2
+                ? "A better ride, together."
+                : me?.status === "accepted"
+                  ? "Your place is accepted."
+                  : "Review your ride."}
+        </h1>
+        <p className="account-muted mt-4 text-lg">
+          {currentStep === 1
+            ? "Share the journey, split the cost, and leave a lighter footprint."
+            : match?.status === "confirmed"
+              ? "Your group and vehicle owner have confirmed the plan."
+              : currentStep === 2
+                ? "We'll look for people headed your way and a suitable shared vehicle."
+                : "Your ride is confirmed once every traveler and the vehicle owner agree."}
         </p>
-      </Card>
-    </div>
-  );
-}
-function StepVehicles() {
-  const t = useMainTrip();
-  const vehicles = useStore((s) => s.vehicles);
-  const busy = useStore((s) => s.busy);
-  useEffect(() => {
-    void api.perform(d.ensureVehicle);
-  }, []);
-  const candidates = t?.options ?? [];
-  return (
-    <div className="space-y-6 text-left">
-      <div className="grid gap-6 md:grid-cols-2">
-        {candidates.map((option) => {
-          const v = vehicles.find((v) => Number(v.id) === option.vehicle_id);
-          if (!v) return null;
-          const on = t?.vehicleId === v.id;
-          return (
-            <Card key={v.id} className={on ? "ring-2 ring-primary" : ""}>
-              <div className="flex justify-between">
-                {v.type === "EV" ? <Zap /> : <Fuel />}
-                <StatusPill
-                  status={on ? "PENDING" : "AVAILABLE"}
-                  label={on ? "SELECTED" : v.type}
+      </header>
+      {error && (
+        <p role="alert" className="account-error mb-5">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="mb-5 rounded-xl bg-secondary p-4 text-sm">
+          {notice}
+        </p>
+      )}
+      {currentStep === 1 ? (
+        <div className="grid items-start gap-6 lg:grid-cols-[1.35fr_.65fr]">
+          <form onSubmit={(event) => void submit(event)} className="account-panel space-y-6">
+            <div>
+              <label className="account-label" htmlFor="trip-pickup">
+                Pickup point
+              </label>
+              <select
+                id="trip-pickup"
+                className="account-input"
+                value={pickupIndex}
+                onChange={(event) => setPickupIndex(Number(event.target.value))}
+              >
+                {PICKUPS.map((pickup, i) => (
+                  <option key={pickup.name} value={i}>
+                    {pickup.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="account-label" htmlFor="trip-destination">
+                Destination
+              </label>
+              <select
+                id="trip-destination"
+                className="account-input"
+                value={destinationIndex}
+                onChange={(event) => setDestinationIndex(Number(event.target.value))}
+              >
+                {DESTINATIONS.map((destination, i) => (
+                  <option key={destination.name} value={i}>
+                    {destination.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="account-label" htmlFor="trip-date">
+                  Departure date
+                </label>
+                <input
+                  id="trip-date"
+                  className="account-input"
+                  type="date"
+                  required
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
                 />
               </div>
-              <h2 className="mt-4 text-2xl font-semibold">{v.name}</h2>
-              <p className="text-muted-foreground">
-                Owner {userById(v.ownerId).name} ? ${v.rate}/hr
-              </p>
-              <dl className="mt-5 grid grid-cols-3 gap-3">
-                {[
-                  ["Deadhead", `${option.deadhead_mi} mi`],
-                  ["Trip cost", `$${(option.total_cost_cents / 100).toFixed(2)}`],
-                  ["Trip CO2", `${option.kg_co2.toFixed(2)} kg`],
-                ].map(([k, val]) => (
-                  <div key={k}>
-                    <dt className="text-xs text-muted-foreground">{k}</dt>
-                    <dd className="text-xl font-bold">{val}</dd>
-                  </div>
-                ))}
-              </dl>
-              {!option.feasible && (
-                <p className="mt-4 text-sm text-destructive">{option.why_not.join("; ")}</p>
-              )}
-              {!on && (
-                <button
-                  disabled={busy || !option.feasible}
-                  className={cn(button, "mt-5")}
-                  onClick={() => void api.perform(() => api.reserve_vehicle(MAIN_TRIP, v.id))}
+              <div>
+                <label className="account-label" htmlFor="trip-time">
+                  Departure time
+                </label>
+                <input
+                  id="trip-time"
+                  className="account-input"
+                  type="time"
+                  required
+                  value={time}
+                  onChange={(event) => setTime(event.target.value)}
+                />
+              </div>
+            </div>
+            <p className="account-muted !mt-2 text-xs">
+              Times use your device's time zone. We look within 45 minutes of your departure.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="account-label" htmlFor="trip-role">
+                  How would you like to travel?
+                </label>
+                <select
+                  id="trip-role"
+                  className="account-input"
+                  value={role}
+                  onChange={(event) => setRole(event.target.value as "passenger" | "driver")}
                 >
-                  Choose {v.name}
-                </button>
-              )}
-            </Card>
-          );
-        })}
-      </div>
-      {!candidates.length && <p>No feasible vehicle yet. Retry matching on the previous step.</p>}
-      <p className="text-muted-foreground">{t?.explanation}</p>
-    </div>
-  );
-}
-function TravelerApprovals() {
-  const t = useMainTrip();
-  const busy = useStore((s) => s.busy);
-  return (
-    <div className="space-y-3">
-      {t?.participants.map((p) => (
-        <Card key={p.userId}>
-          <div className="flex flex-wrap items-center gap-3">
-            <Avatar id={p.userId} />
-            <b className="flex-1">{userById(p.userId).name}</b>
-            <StatusPill status={p.status} />
-            {p.status === "PENDING" && (
-              <button
-                className={button}
-                disabled={busy}
-                onClick={() => void api.perform(() => api.accept_match(MAIN_TRIP, p.userId))}
-              >
-                Accept for {userById(p.userId).name}
-              </button>
-            )}
-          </div>
-        </Card>
-      ))}
-    </div>
-  );
-}
-function StepRider() {
-  const t = useMainTrip();
-  useEffect(() => {
-    void api.perform(d.step4);
-  }, [t?.matchId, t?.vehicleId]);
-  return (
-    <div className="grid gap-8 text-left md:grid-cols-2">
-      <TravelerApprovals />
-      <Phone userId="maya" />
-    </div>
-  );
-}
-function OwnerApproval() {
-  const t = useMainTrip();
-  const vehicles = useStore((s) => s.vehicles);
-  const bookings = useStore((s) => s.bookings);
-  const busy = useStore((s) => s.busy);
-  const v = vehicles.find((v) => v.id === t?.vehicleId);
-  const b = bookings.find((b) => b.tripId === MAIN_TRIP);
-  if (!v || !b) return <p>No vehicle reservation yet.</p>;
-  return (
-    <Card>
-      <h2 className="text-xl font-bold">{v.name}</h2>
-      <p>Owner: {userById(v.ownerId).name}</p>
-      <p className="my-3">
-        {b.window} ? ${b.amount.toFixed(2)} rental
-      </p>
-      <StatusPill status={b.status} />
-      {b.status === "PENDING" && (
-        <div className="mt-4 flex gap-3">
-          <button
-            disabled={busy}
-            className={button}
-            onClick={() => void api.perform(() => api.respond_booking(b.id, true))}
-          >
-            Approve as {userById(v.ownerId).name}
-          </button>
-          <button
-            disabled={busy}
-            className="px-4 underline"
-            onClick={() => void api.perform(() => api.respond_booking(b.id, false))}
-          >
-            Decline
+                  <option value="passenger">I need a ride</option>
+                  <option value="driver">I can drive a shared car</option>
+                </select>
+              </div>
+              <div>
+                <label className="account-label" htmlFor="trip-party">
+                  People in your party
+                </label>
+                <input
+                  id="trip-party"
+                  className="account-input"
+                  type="number"
+                  min="1"
+                  max="6"
+                  required
+                  value={partySize}
+                  onChange={(event) => setPartySize(Number(event.target.value))}
+                />
+              </div>
+            </div>
+            <button
+              className="account-button w-full justify-center"
+              disabled={busy || !user}
+              type="submit"
+            >
+              {busy ? "Saving your trip…" : "Find my ride"}
+              <ArrowRight className="size-4" />
+            </button>
+          </form>
+          <aside className="rounded-[1.75rem] bg-primary p-7 text-primary-foreground sm:p-8">
+            <Leaf className="mb-10 size-8" />
+            <h2 className="text-2xl font-semibold leading-tight">
+              More shared miles.
+              <br />
+              Fewer extra trips.
+            </h2>
+            <p className="mt-4 text-sm leading-relaxed opacity-80">
+              See the estimated cost and environmental savings before you confirm your place.
+            </p>
+            <div className="mt-8 border-t border-current/20 pt-5 text-sm">
+              <MapPin className="mb-3 size-5" />
+              Currently serving Ann Arbor campus pickup points.
+            </div>
+          </aside>
+        </div>
+      ) : dashboard.isPending ? (
+        <p role="status" className="account-panel">
+          Loading your trip…
+        </p>
+      ) : dashboard.error ? (
+        <div className="account-panel">
+          <p role="alert" className="account-error">
+            {dashboard.error.message}
+          </p>
+          <button className="account-secondary mt-4" onClick={() => void dashboard.refetch()}>
+            Try again
           </button>
         </div>
+      ) : !trip ? (
+        <div className="account-panel">
+          <h2 className="text-xl font-semibold">This trip isn't in your account.</h2>
+          <p className="account-muted mt-2">
+            Choose a trip from your profile or start a new booking.
+          </p>
+          <Link to="/profile" className="account-button mt-5">
+            My trips
+          </Link>
+        </div>
+      ) : trip.status === "cancelled" ? (
+        <div className="account-panel">
+          <h2 className="text-xl font-semibold">This trip was cancelled.</h2>
+          <button className="account-button mt-5" onClick={() => void go("1")}>
+            Book another trip
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {currentStep === 3 && match?.status !== "confirmed" && (
+            <button
+              className="account-muted inline-flex items-center gap-2 text-sm"
+              onClick={() => void go("2")}
+            >
+              <ArrowLeft className="size-4" />
+              Back to ride options
+            </button>
+          )}
+          <AccountTripCard trip={trip} match={match} />
+          {!match ? (
+            <section className="account-panel">
+              <Clock3 className="mb-4 size-7 text-primary" />
+              <h2 className="text-xl font-semibold">Your request is saved.</h2>
+              <p className="account-muted mt-3 max-w-2xl">
+                {trip.role === "passenger"
+                  ? "We're waiting for a driver, vehicle, and compatible trips. Your request stays here while we look."
+                  : "We're looking for a suitable shared vehicle and compatible travelers. Your request stays here while we look."}
+              </p>
+              <p className="account-muted mt-2 text-sm">
+                This page updates automatically. You can also check back in My trips.
+              </p>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button
+                  disabled={busy}
+                  className="account-button"
+                  onClick={() => void refreshMatch()}
+                >
+                  <RefreshCw className="size-4" />
+                  {busy ? "Checking…" : "Check for rides"}
+                </button>
+                <Link to="/profile" className="account-secondary">
+                  My trips
+                </Link>
+              </div>
+            </section>
+          ) : (
+            <>
+              <section className="account-panel">
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <h2 className="text-xl font-semibold">Your group</h2>
+                  <span className="account-muted text-sm">
+                    {match.pricing?.group_size ??
+                      match.members.filter((m) => m.status !== "cancelled").length}{" "}
+                    people
+                  </span>
+                </div>
+                <ul className="divide-y divide-border">
+                  {match.members
+                    .filter((member) => member.status !== "cancelled")
+                    .map((member) => (
+                      <li key={member.trip_id} className="flex items-center gap-3 py-4">
+                        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-secondary font-semibold">
+                          {member.name.slice(0, 1)}
+                        </span>
+                        <div className="flex-1">
+                          <span className="font-semibold">{member.name}</span>
+                          {member.user_id === user?.id && (
+                            <span className="account-muted ml-2 text-xs">You</span>
+                          )}
+                          <p className="account-muted text-xs">
+                            {member.role === "driver" ? "Driver" : "Rider"}
+                          </p>
+                        </div>
+                        <span className="text-xs font-medium">
+                          {member.status === "accepted" ? "Accepted" : "Awaiting response"}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+                  <div>
+                    <p className="font-semibold">{match.vehicle?.make_model ?? "Shared vehicle"}</p>
+                    <p className="account-muted mt-1 text-sm">
+                      {match.booking?.status === "approved"
+                        ? "Owner approved"
+                        : match.status === "at_risk"
+                          ? "A replacement vehicle is needed"
+                          : match.booking
+                            ? "Waiting for the owner's approval"
+                            : "No rental approval needed"}
+                    </p>
+                  </div>
+                  {match.booking?.status === "approved" && (
+                    <Check className="size-5 text-primary" />
+                  )}
+                </div>
+              </section>
+              {currentStep === 2 &&
+                trip.role === "driver" &&
+                (match.reasons?.vehicle_options?.length ?? 0) > 1 && (
+                  <section className="account-panel">
+                    <h2 className="text-xl font-semibold">Vehicle options</h2>
+                    <p className="account-muted mt-2 text-sm">
+                      Changing the vehicle asks everyone to review the new plan.
+                    </p>
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                      {match.reasons!.vehicle_options.map((option) => (
+                        <div
+                          key={option.vehicle_id}
+                          className={`rounded-2xl border p-5 ${match.vehicle_id === option.vehicle_id ? "border-primary bg-secondary/40" : "border-border"}`}
+                        >
+                          <p className="font-semibold">
+                            {option.make_model ??
+                              (option.vehicle_id === match.vehicle?.id
+                                ? match.vehicle.make_model
+                                : `Shared vehicle #${option.vehicle_id}`)}
+                          </p>
+                          <p className="account-muted mt-2 text-sm">
+                            ${(option.total_cost_cents / 100).toFixed(2)} estimated group total ·{" "}
+                            {option.kg_co2.toFixed(1)} kg CO₂
+                          </p>
+                          {!option.feasible && (
+                            <p className="mt-2 text-xs text-destructive">
+                              {option.why_not.join("; ")}
+                            </p>
+                          )}
+                          <button
+                            disabled={
+                              busy || !option.feasible || match.vehicle_id === option.vehicle_id
+                            }
+                            className="account-secondary mt-4"
+                            onClick={() =>
+                              void act(async () => {
+                                await accountRequest(`/matches/${match.id}/vehicle`, {
+                                  method: "POST",
+                                  body: { vehicle_id: option.vehicle_id },
+                                });
+                                await dashboard.refetch();
+                              })
+                            }
+                          >
+                            {match.vehicle_id === option.vehicle_id ? "Selected" : "Choose vehicle"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              {match.status === "at_risk" ? (
+                <section className="account-panel">
+                  <h2 className="text-xl font-semibold">The plan changed.</h2>
+                  <p className="account-muted mt-2">
+                    We'll need a suitable replacement before you can confirm.
+                  </p>
+                  <button
+                    className="account-button mt-5"
+                    disabled={busy}
+                    onClick={() => void refreshMatch()}
+                  >
+                    Find a replacement
+                  </button>
+                </section>
+              ) : currentStep === 2 ? (
+                <div className="flex justify-end">
+                  <button className="account-button" onClick={() => void go("3")}>
+                    Review and confirm
+                    <ArrowRight className="size-4" />
+                  </button>
+                </div>
+              ) : (
+                <section className="account-panel">
+                  <h2 className="text-xl font-semibold">
+                    {match.status === "confirmed"
+                      ? "Trip confirmed"
+                      : me?.status === "accepted"
+                        ? "Waiting for your ride to be confirmed"
+                        : "Ready to share the ride?"}
+                  </h2>
+                  <p className="account-muted mt-3">
+                    {match.status === "confirmed"
+                      ? `Your group departs on ${campusDay(match.depart_time)} at ${campusTime(match.depart_time)} (Ann Arbor time). ${trip.role === "passenger" ? "Confirm your pickup timing with the driver before departure." : "Coordinate pickup timing with your passengers before departure."}`
+                      : me?.status === "accepted"
+                        ? "You've accepted this plan. This page updates when the other travelers and vehicle owner respond."
+                        : "Confirm only your place. The other travelers and the vehicle owner respond from their own accounts."}
+                  </p>
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    {me?.status === "pending" && (
+                      <button
+                        className="account-button"
+                        disabled={busy}
+                        onClick={() =>
+                          void act(async () => {
+                            await accountRequest(`/matches/${match.id}/accept`, {
+                              method: "POST",
+                              body: { user_id: user!.id },
+                            });
+                            await dashboard.refetch();
+                            setNotice("Your acceptance is saved.");
+                          })
+                        }
+                      >
+                        {busy ? "Confirming…" : "Confirm my place"}
+                        <Check className="size-4" />
+                      </button>
+                    )}
+                    <Link to="/profile" className="account-secondary">
+                      My trips
+                    </Link>
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+          <div className="border-t border-border pt-5">
+            <button
+              className="text-sm text-muted-foreground underline underline-offset-4 disabled:opacity-50"
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  await accountRequest(`/trips/${trip.id}/cancel`, { method: "POST" });
+                  await dashboard.refetch();
+                  setNotice("Your trip request has been cancelled.");
+                })
+              }
+            >
+              Cancel my trip request
+            </button>
+          </div>
+        </div>
       )}
-    </Card>
-  );
-}
-function StepOwner() {
-  const t = useMainTrip();
-  const owner = useStore((s) => s.vehicles.find((v) => v.id === t?.vehicleId)?.ownerId);
-  useEffect(() => {
-    void api.perform(d.step5);
-  }, [t?.matchId, t?.vehicleId]);
-  return (
-    <div className="grid gap-8 text-left md:grid-cols-2">
-      <OwnerApproval />
-      {owner && <Phone userId={owner} />}
-    </div>
-  );
-}
-function StepDisruption() {
-  const t = useMainTrip();
-  const busy = useStore((s) => s.busy);
-  const phase = useStore((s) => s.ui.disruption);
-  if (!t) return <p>Create a trip first.</p>;
-  return (
-    <div className="space-y-6 text-left">
-      <button
-        disabled={busy || phase === "running" || !t.vehicleId}
-        className="rounded-full border-2 border-destructive px-6 py-3 font-bold text-destructive disabled:opacity-40"
-        onClick={() => void api.perform(d.simulateCancellation)}
-      >
-        {phase === "running" ? "Finding a replacement?" : "Simulate vehicle cancellation"}
-      </button>
-      <TripCard t={t} />
-      {t.vehicleState === "LOST" && (
-        <button
-          className={button}
-          disabled={busy}
-          onClick={() => void api.perform(() => api.find_matches(MAIN_TRIP))}
-        >
-          Retry replacement
-        </button>
-      )}
-      {(phase === "done" || t.changed) && (
-        <>
-          <h2 className="text-xl font-bold">Review the replacement</h2>
-          <TravelerApprovals />
-          <OwnerApproval />
-        </>
-      )}
-    </div>
-  );
-}
-function Done() {
-  const t = useMainTrip();
-  return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 p-6 pb-20 text-center">
-      <h1 className="text-4xl font-semibold">
-        {t?.status === "CONFIRMED" ? "Trip confirmed" : "Your trip is saved"}
-      </h1>
-      <p className="text-muted-foreground">
-        {t?.status === "CONFIRMED"
-          ? "Every traveler and the vehicle owner have approved."
-          : "The trip is awaiting the remaining confirmations."}
-      </p>
-      {t && <TripCard t={t} />}
-      <Link to="/profile" className={cn(button, "inline-block")}>
-        Go to profile
-      </Link>
     </main>
   );
 }

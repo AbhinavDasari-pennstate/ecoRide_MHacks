@@ -70,7 +70,7 @@ def reset(clear_cache: bool = False, *, allow_remote_reset: bool = False) -> dic
         raise ValueError("Seeding deletes app data. Use --reset-demo-db only on a disposable Neon demo branch.")
     db.apply_schema()
     sat, dest = saturday(), destination()
-    tables = "users, vehicles, trips, matches, match_members, bookings, agent_runs, events" + (", route_cache" if clear_cache else "")
+    tables = "users, vehicles, trips, matches, match_members, bookings, agent_runs, events, auth_rate_limits" + (", route_cache" if clear_cache else "")
     with db.conn() as c:
         db.lock(c)
         c.execute(f"truncate {tables} restart identity cascade")

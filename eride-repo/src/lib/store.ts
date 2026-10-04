@@ -43,6 +43,8 @@ export type Impact = {
 };
 export type VehicleOption = {
   vehicle_id: number;
+  make_model?: string;
+  fuel_type?: string;
   feasible: boolean;
   kg_co2: number;
   deadhead_mi: number;

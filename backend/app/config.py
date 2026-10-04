@@ -10,7 +10,8 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 DATABASE_URL = os.getenv("DATABASE_URL", "local")          # "local" = embedded pgserver (dev only)
 DATABASE_URL_DIRECT = os.getenv("DATABASE_URL_DIRECT", "")
 API_SERVICE_TOKEN = os.getenv("API_SERVICE_TOKEN", "")  # trusted server adapters only; never expose in browser JS
-CORS_ORIGINS = [s.strip() for s in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",") if s.strip()]
+CORS_ORIGINS = [s.strip().rstrip("/") for s in os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174").split(",") if s.strip()]
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"  # true for HTTPS deployments
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 MAPS_SERVER_KEY = os.getenv("MAPS_SERVER_KEY", "")
 # Read at call time (config.PLANNER), so scripts can switch modes at runtime.

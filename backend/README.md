@@ -10,7 +10,7 @@ It works fully offline with no keys: distances fall back to straight-line distan
 back to the deterministic planner.
 
 Start with [Neon setup and team handoff](NEON_SETUP.md) for local commands, account/key setup,
-database guarantees, integration contracts, and the 24-hour split. The seven app modules are retained.
+database guarantees, integration contracts, and the 24-hour split. Account access is described below.
 
 ## Setup
 
@@ -27,9 +27,11 @@ cd backend
 | key | value |
 |---|---|
 | `DATABASE_URL` | Neon **pooled** URL, or `local` for the embedded Postgres in `%LOCALAPPDATA%/campus-rides-pg` |
+| `LOCAL_DATABASE_PATH` | Absolute embedded PostgreSQL directory. Give each checkout its own directory, such as `C:\Users\abhin\ecoRide_MHacks\.local\postgres`; use the same value for migration and server processes. |
 | `DATABASE_URL_DIRECT` | Required direct (unpooled) URL for remote migrations. Leave empty with `local`. |
-| `API_SERVICE_TOKEN` | Bearer token for trusted server adapters; empty is local demo mode. Not end-user authentication. |
-| `CORS_ORIGINS` | Comma-separated frontend origins; defaults to localhost ports 3000 and 5173. |
+| `API_SERVICE_TOKEN` | Optional bearer token for trusted server adapters; empty disables adapter and demo endpoints. Never forward it from a browser proxy. |
+| `CORS_ORIGINS` | Exact frontend origins allowed for credentialed CORS and browser writes; defaults include localhost/127.0.0.1 ports 5173 and 5174. Set the deployed frontend origin explicitly. |
+| `SESSION_COOKIE_SECURE` | `false` only for local HTTP; set `true` for HTTPS deployments. |
 | `GEMINI_API_KEY` | optional; a Google AI Studio key (new keys start with `AQ.`); empty = deterministic planner only |
 | `MAPS_SERVER_KEY` | optional; needs **Routes API** and **Geocoding API** enabled; empty = estimates |
 | `PLANNER` | `deterministic` (default) or `gemini` |
@@ -49,6 +51,23 @@ cd backend
 ../.venv/Scripts/python -m pytest -q              # unit tests + isolated real PostgreSQL integration tests
 ```
 
+To run this checkout independently from the other local app, set `DATABASE_URL=local` and
+`LOCAL_DATABASE_PATH=C:\Users\abhin\ecoRide_MHacks\.local\postgres` in the environment of both the migration
+and API process. Set the frontend's server-side `BACKEND_URL=http://127.0.0.1:8001`. Start the API from `backend`:
+
+```powershell
+../.venv/Scripts/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips "127.0.0.1,::1"
+```
+
+Authentication limits use the client address supplied by ASGI. When proxying, the trusted edge must **overwrite**
+`X-Forwarded-For` with its incoming socket's remote address, not forward or append a caller-supplied value; it must
+also set `X-Forwarded-Proto` from the actual connection. The Vite proxy implements this locally. Uvicorn trusts
+only the explicit loopback proxy peers above, so different remote clients receive separate IP quotas and direct
+untrusted clients cannot evade limits with forged headers. For production, replace the allowed peers with the exact
+ingress proxy addresses, ensure that ingress normalizes those headers, and restrict network access to the backend.
+Never use `--forwarded-allow-ips "*"` on a backend clients can reach directly. Without a proxy use `--no-proxy-headers`.
+People genuinely sharing one public IP still share the 30-attempt/15-minute IP limit; each email also has its own limit.
+
 `run_scenario.py` reseeds the database and drives the API in-process: Maya, Jordan and Alex request rides to Meijer,
 get grouped into the Tesla (lowest CO2, even though the Civic is closer and cheaper), accept, Sam approves the booking,
 the Tesla gets cancelled and the match moves to the Leaf, awaiting new traveler acceptance and owner approval. It also posts the fixture plans in
@@ -60,11 +79,41 @@ writes real responses to `fixtures/api/*.json` for the frontend.
 All bodies and responses are JSON. Times are ISO 8601 (a naive time means America/Detroit). Money is integer cents.
 Unknown id -> 404, bad input -> 422.
 
+Browser accounts use the `eride_session` HttpOnly, SameSite=Lax cookie. Passwords use independently salted
+scrypt (`N=2^17`, `r=8`, `p=1`); only SHA-256 hashes of opaque session tokens are stored. Sessions expire after
+seven days and logout revokes the token. Authentication attempts are limited in PostgreSQL by normalized email
+and client address. The server rejects browser writes from origins outside `CORS_ORIGINS` and marks API responses
+`Cache-Control: no-store`. Use same-origin `/api` proxying in production and HTTPS with `SESSION_COOKIE_SECURE=true`.
+
+| method | path | account behavior |
+|---|---|---|
+| POST | `/auth/signup` | `{name,email,password,role}`; role is `rider` or `owner`, password is 12–128 characters with spaces preserved. Returns 201 `{user}` and sets the cookie. Duplicate email returns 409. |
+| POST | `/auth/login` | `{email,password}`; returns `{user}` and a new cookie. Invalid credentials return a generic 401. |
+| GET | `/auth/me` | `{user}` or `{user:null}` if signed out/expired. User contains only `id`, `name`, `email`, `role`. |
+| POST | `/auth/logout` | Revokes the current session, clears the cookie, returns `{ok:true}`. |
+| GET | `/me/dashboard` | Current account's profile, trips, vehicles and authorized matches. |
+| POST | `/trips/{id}/plan` | Retries planning for the current account's trip; returns only that trip's `{matches}`. |
+| GET | `/buyer/dataset` | Buyer-only simulated dataset. Rider and owner accounts receive 403. |
+
+Riders can book and manage their own trips. Owners can also book and manage their own vehicle listings and
+booking requests. Match details are visible only to participating travelers and the selected vehicle's owner;
+only the driver can choose a different vehicle. User/owner IDs supplied in browser bodies must match the session.
+Listing vehicles from a browser returns only the current owner's vehicles; riders receive an empty list.
+
+Buyer access is an operator grant, never an option a signup request can assign itself. After the person signs up,
+run `python scripts/grant_buyer.py person@example.com` from `backend` using the intended database configuration.
+This changes that account to buyer and revokes its existing sessions; the person signs in again with their own password.
+No default accounts or passwords are created. Email delivery, email verification and password reset are not implemented.
+
+The `/demo/*`, `/users` creation, identity-linking, `/planner/run`, `/events`, `/agent-runs`, and `/ready` endpoints
+require an explicitly configured service bearer token. A blank token never bypasses authentication. Trusted scripts
+may use this token on other operations, but a browser session always takes precedence and cannot inherit its privilege.
+
 | method | path | what it does |
 |---|---|---|
 | GET | `/health` | `{ok, planner, maps: live\|offline, gemini: configured\|missing}` |
 | GET | `/ready` | Database connectivity and pending migration check; 503 if unavailable or not migrated |
-| POST | `/users` | Idempotent account creation by `{provider, subject, name, roles, home_lat, home_lng, phone?}` |
+| POST | `/users` | Trusted adapter only: idempotent profile creation by `{provider, subject, name, roles, home_lat, home_lng, phone?}` |
 | POST | `/users/{id}/identities` | Trusted adapter links a verified `{provider, subject}` to an existing account |
 | GET | `/users/{id}/dashboard` | Consistent snapshot of profile, trips, listings, and participant/owner matches |
 | GET | `/vehicles` | Filter by `owner_id`, `active`, `limit`, and `offset` |
@@ -115,8 +164,7 @@ Known limits (marked `ponytail:` in the code): single process, so run one uvicor
 match is proposed isn't added to it until that match replans. A planning run holds its database transaction (and the
 advisory lock) through the Gemini call, so accepts and approvals queue behind it for up to ~20 s.
 
-The API stores accounts and shared identities but does not implement user login or per-user authorization.
-With `API_SERVICE_TOKEN` set, only trusted adapters should call it; those adapters must verify identity,
-ownership, and inbound webhook signatures. Browser clients need an authenticated server proxy before public use.
-ElevenLabs/Photon delivery and durable background job retries are not implemented. Events are persisted for polling;
+Browser login and per-user authorization are enforced by the API. Trusted adapters remain responsible for verifying
+their external identities and inbound webhook signatures. Never expose the adapter token to browser clients.
+ElevenLabs/Photon delivery and durable background job retries are not implemented. Events are persisted for trusted-adapter polling;
 failed disruptions stay `at_risk` and can be retried with `POST /planner/run` and `match_id`.

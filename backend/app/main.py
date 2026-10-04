@@ -3,26 +3,18 @@ LookupError -> 404, ValueError -> 422. Planning after POST /trips runs as a back
 the other state changes replan synchronously inside apply and return the diff."""
 from datetime import datetime
 from contextlib import asynccontextmanager
-import secrets
+import json
+from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from app import apply, config, db
-
-
-def service_access(request: Request, authorization: Optional[str] = Header(default=None)):
-    if request.url.path == "/health":
-        return
-    if config.API_SERVICE_TOKEN and not secrets.compare_digest(
-        (authorization or "").encode(), f"Bearer {config.API_SERVICE_TOKEN}".encode()
-    ):
-        raise HTTPException(401, "Valid service bearer token required", headers={"WWW-Authenticate": "Bearer"})
+from app import apply, auth, config, db
 
 
 @asynccontextmanager
@@ -31,8 +23,24 @@ async def lifespan(app):
     db.close_pool()
 
 
-app = FastAPI(title="Campus Rides", lifespan=lifespan, dependencies=[Depends(service_access)])
-app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(title="Campus Rides", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_credentials=True,
+                   allow_methods=["*"], allow_headers=["*"])
+app.include_router(auth.router)
+
+
+@app.middleware("http")
+async def protect_browser_requests(request: Request, call_next):
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        origin = request.headers.get("origin")
+        if ((origin is not None and origin.rstrip("/") not in config.CORS_ORIGINS)
+                or (origin is None and request.headers.get("sec-fetch-site") == "cross-site")):
+            return JSONResponse({"detail": "This request origin is not allowed"}, status_code=403,
+                                headers={"Cache-Control": "no-store"})
+    response = await call_next(request)
+    # Account and trip data must not survive in shared caches or the PWA cache.
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.exception_handler(psycopg.IntegrityError)
@@ -76,7 +84,7 @@ class UserIn(IdentityIn):
 
 
 class TripIn(InputModel):
-    user_id: int
+    user_id: Optional[int] = None
     role: Literal["driver", "passenger"]
     dest_name: str
     window_start: datetime        # naive = America/Detroit local
@@ -121,7 +129,7 @@ class VehicleIn(InputModel):
 
 
 class AcceptIn(InputModel):
-    user_id: int
+    user_id: Optional[int] = None
 
 
 class VehicleChoiceIn(InputModel):
@@ -145,27 +153,28 @@ def health():
 
 
 @app.post("/demo/bootstrap")
-def demo_bootstrap():
+def demo_bootstrap(actor=Depends(auth.require_service)):
     return apply.demo_bootstrap()
 
 
 @app.post("/demo/trips")
-def demo_start():
+def demo_start(actor=Depends(auth.require_service)):
     return apply.demo_start()
 
 
 @app.post("/demo/restart")
-def demo_restart():
+def demo_restart(actor=Depends(auth.require_service)):
     return apply.demo_restart()
 
 
 @app.post("/matches/{match_id}/vehicle")
-def select_vehicle(match_id: int, body: VehicleChoiceIn):
+def select_vehicle(match_id: int, body: VehicleChoiceIn, actor=Depends(auth.principal)):
+    auth.match_access(actor, match_id, driver_only=True)
     return apply.select_vehicle(match_id, body.vehicle_id)
 
 
 @app.get("/ready")
-def ready():
+def ready(actor=Depends(auth.require_service)):
     with db.conn() as c:
         if not c.execute("select to_regclass('schema_migrations') as name").fetchone()["name"]:
             raise HTTPException(503, "Database schema missing; run scripts/migrate.py")
@@ -176,50 +185,69 @@ def ready():
 
 
 @app.post("/users")
-def create_user(body: UserIn):
+def create_user(body: UserIn, actor=Depends(auth.require_service)):
     return apply.create_user(body.model_dump())
 
 
 @app.post("/users/{user_id}/identities")
-def link_identity(user_id: int, body: IdentityIn):
+def link_identity(user_id: int, body: IdentityIn, actor=Depends(auth.require_service)):
     return apply.link_identity(user_id, body.provider, body.subject)
 
 
 @app.get("/users/{user_id}/dashboard")
-def dashboard(user_id: int):
+def dashboard(user_id: int, actor=Depends(auth.principal)):
+    auth.identity(actor, user_id)
     return apply.dashboard(user_id)
+
+
+@app.get("/me/dashboard")
+def my_dashboard(actor=Depends(auth.require_user)):
+    return apply.dashboard(actor["id"])
 
 
 @app.get("/vehicles")
 def vehicles(owner_id: Optional[int] = None, active: Optional[bool] = True,
-             limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
+             limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0),
+             actor=Depends(auth.principal)):
+    if not actor.get("service"):
+        auth.require_role(actor, "rider", "owner")
+        owner_id = auth.identity(actor, owner_id)
+        if actor["role"] != "owner":
+            return []
     return apply.list_vehicles(owner_id, active, limit, offset)
 
 
 @app.post("/trips")
-def create_trip(body: TripIn, tasks: BackgroundTasks):
-    trip = apply.create_trip(body.model_dump())
+def create_trip(body: TripIn, tasks: BackgroundTasks, actor=Depends(auth.principal)):
+    auth.require_role(actor, "rider", "owner")
+    trip = apply.create_trip({**body.model_dump(), "user_id": auth.identity(actor, body.user_id)})
     tasks.add_task(apply.run_planning, "trip_created", trip["id"])
     return {"trip": trip, "planning": "queued"}
 
 
 @app.patch("/trips/{trip_id}")
-def update_trip(trip_id: int, body: TripPatch):
-    return apply.update_trip(trip_id, body.model_dump(exclude_unset=True))
+def update_trip(trip_id: int, body: TripPatch, actor=Depends(auth.principal)):
+    auth.own_trip(actor, trip_id)
+    result = apply.update_trip(trip_id, body.model_dump(exclude_unset=True))
+    return result if actor.get("service") else {"trip": result["trip"], "planning": "completed"}
 
 
 @app.post("/trips/{trip_id}/cancel")
-def cancel_trip(trip_id: int):
-    return apply.cancel_trip(trip_id)
+def cancel_trip(trip_id: int, actor=Depends(auth.principal)):
+    auth.own_trip(actor, trip_id)
+    result = apply.cancel_trip(trip_id)
+    return result if actor.get("service") else {"trip": result["trip"]}
 
 
 @app.get("/trips/{trip_id}/matches")
-def trip_matches(trip_id: int):
+def trip_matches(trip_id: int, actor=Depends(auth.principal)):
+    auth.own_trip(actor, trip_id)
     return apply.matches_for_trip(trip_id)
 
 
 @app.get("/matches/{match_id}")
-def get_match(match_id: int):
+def get_match(match_id: int, actor=Depends(auth.principal)):
+    auth.match_access(actor, match_id)
     m = apply.get_match(match_id)
     if m is None:
         raise HTTPException(404, f"no match with id {match_id}")
@@ -227,46 +255,72 @@ def get_match(match_id: int):
 
 
 @app.post("/matches/{match_id}/accept")
-def accept(match_id: int, body: AcceptIn):
-    return apply.accept(match_id, body.user_id)
+def accept(match_id: int, body: Optional[AcceptIn] = None, actor=Depends(auth.principal)):
+    auth.require_role(actor, "rider", "owner")
+    auth.match_access(actor, match_id)
+    return apply.accept(match_id, auth.identity(actor, body.user_id if body else None))
 
 
 @app.post("/vehicles")
-def create_vehicle(body: VehicleIn):
-    return apply.create_vehicle(body.model_dump())
+def create_vehicle(body: VehicleIn, actor=Depends(auth.principal)):
+    auth.require_role(actor, "owner")
+    owner_id = body.owner_id if actor.get("service") else auth.identity(actor, body.owner_id)
+    result = apply.create_vehicle({**body.model_dump(), "owner_id": owner_id})
+    # Adding a vehicle can retry unrelated groups. Do not return their diffs.
+    return result if actor.get("service") else {key: value for key, value in result.items() if key != "replans"}
 
 
 @app.post("/vehicles/{vehicle_id}/cancel")
-def cancel_vehicle(vehicle_id: int):
-    return apply.cancel_vehicle(vehicle_id)
+def cancel_vehicle(vehicle_id: int, actor=Depends(auth.principal)):
+    auth.own_vehicle(actor, vehicle_id)
+    result = apply.cancel_vehicle(vehicle_id)
+    return result if actor.get("service") else {"vehicle_id": vehicle_id, "ok": True}
 
 
 @app.post("/bookings/{booking_id}/approve")
-def approve_booking(booking_id: int):
+def approve_booking(booking_id: int, actor=Depends(auth.principal)):
+    auth.own_booking(actor, booking_id)
     return apply.approve_booking(booking_id)
 
 
 @app.post("/bookings/{booking_id}/decline")
-def decline_booking(booking_id: int):
-    return apply.decline_booking(booking_id)
+def decline_booking(booking_id: int, actor=Depends(auth.principal)):
+    auth.own_booking(actor, booking_id)
+    result = apply.decline_booking(booking_id)
+    return result if actor.get("service") else {"booking": result["booking"]}
 
 
 @app.post("/planner/run")
-def planner_run(body: PlannerRunIn):
+def planner_run(body: PlannerRunIn, actor=Depends(auth.require_service)):
     return apply.run_planning("manual_plan" if body.plan is not None else "api", body.trip_id,
                               match_id=body.match_id, mode=body.mode, dry_run=body.dry_run, plan=body.plan)
 
 
 @app.get("/impact")
-def impact():
+def impact(actor=Depends(auth.principal)):
     return apply.impact_summary()
 
 
 @app.get("/events")
-def events(since: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=1000)):
+def events(since: int = Query(0, ge=0), limit: int = Query(200, ge=1, le=1000), actor=Depends(auth.require_service)):
     return apply.events(since, limit)
 
 
 @app.get("/agent-runs")
-def agent_runs(limit: int = Query(50, ge=1, le=500)):
+def agent_runs(limit: int = Query(50, ge=1, le=500), actor=Depends(auth.require_service)):
     return apply.agent_runs(limit)
+
+
+@app.post("/trips/{trip_id}/plan")
+def retry_trip_plan(trip_id: int, actor=Depends(auth.principal)):
+    auth.own_trip(actor, trip_id)
+    matches = apply.matches_for_trip(trip_id)
+    apply.run_planning("traveler_retry", trip_id, match_id=matches[0]["id"] if matches else None)
+    return {"matches": apply.matches_for_trip(trip_id)}
+
+
+@app.get("/buyer/dataset")
+def buyer_dataset(actor=Depends(auth.require_user)):
+    auth.require_role(actor, "buyer")
+    path = Path(__file__).resolve().parents[1] / "fixtures" / "buyer_dataset.json"
+    return json.loads(path.read_text(encoding="utf-8"))

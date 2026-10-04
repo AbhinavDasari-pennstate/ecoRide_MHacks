@@ -44,7 +44,8 @@ parameters such as `sslmode=require`; never send the connection strings to the f
 ### Switch to Neon
 
 1. Set the two URLs in `backend/.env`. The pooled hostname contains `-pooler`; the direct one does not.
-2. Set `API_SERVICE_TOKEN`, the deployed `CORS_ORIGINS`, and optional Gemini/Maps keys.
+2. Set `API_SERVICE_TOKEN` for operator adapters, the deployed `CORS_ORIGINS`, `SESSION_COOKIE_SECURE=true`
+   for HTTPS, and optional Gemini/Maps keys. Do not inject the adapter token into a browser proxy.
 3. Run `python scripts/migrate.py` using the virtual environment. This preserves existing data.
 4. Restart the API, then call `/ready` with `Authorization: Bearer <service token>`.
    Run `python scripts/check_database.py` to exercise the complete deterministic scenario in a temporary schema
@@ -62,6 +63,7 @@ it also verifies the app's pooled connection before running the scenario.
 | Table | Purpose |
 |---|---|
 | `users`, `user_identities` | Profiles, roles, and verified external identifiers mapped to one account |
+| `auth_accounts`, `auth_sessions`, `auth_rate_limits` | Email/password accounts, hashed cookie sessions, persistent authentication throttles |
 | `vehicles` | Owner, location, availability, capacity, efficiency and source, rental price |
 | `trips` | Driver/rider intent, destination, departure window, party size, lifecycle |
 | `matches`, `match_members` | Group, route, participant acceptance, price and impact snapshots |
@@ -95,7 +97,11 @@ The existing fixture JSON in `fixtures/api/` provides the frontend's initial con
 `python scripts/run_scenario.py --planner deterministic --write-fixtures` on a local/demo database.
 The Plan JSON models remain in `app/core.py`, with valid/invalid examples in `fixtures/`.
 
-For a new account, a trusted adapter calls:
+Browser accounts now use `/auth/signup`, `/auth/login`, `/auth/me` and `/auth/logout`, with an HttpOnly session
+cookie and server-enforced ownership checks. See `README.md` for signup fields, role permissions and buyer grants.
+The browser reads `/me/dashboard`; the raw event feed is restricted to trusted adapters.
+
+For a profile verified through an external identity provider, a trusted adapter calls:
 
 ```json
 {"provider":"web","subject":"verified-auth-user-id","name":"Alex","roles":["driver"],"home_lat":42.278,"home_lng":-83.740}
@@ -105,10 +111,10 @@ Send that to `POST /users`; retries return the same user by `(provider, subject)
 Use `POST /users/{id}/identities` to attach a verified voice/message identifier to the same account. A claimed
 phone number or caller-provided user ID is not identity verification. Display names are intentionally non-unique.
 
-Read `GET /users/{id}/dashboard` for profile, trips, owned vehicles and matches. Poll `/events?since=<last_id>`
-for updates. Use the routes in `README.md` for trip creation, acceptance, cancellation and owner approval.
-Service-token access is available, but end-user authentication, authorization, webhook signature checking and
-Photon/ElevenLabs transport adapters still belong in the integration layer. There is no outbound message sender yet.
+Trusted adapters read `GET /users/{id}/dashboard` for profile, trips, owned vehicles and matches and poll
+`/events?since=<last_id>` for updates. Use the routes in `README.md` for trip creation, acceptance, cancellation
+and owner approval. Webhook signature checking and Photon/ElevenLabs transport adapters still belong in the
+integration layer. There is no outbound message sender yet. A blank service token disables adapter access.
 In-process background planning is suitable for the hackathon; it is not a durable queue and should use one API worker.
 
 ## Assumptions checked on October 3, 2026

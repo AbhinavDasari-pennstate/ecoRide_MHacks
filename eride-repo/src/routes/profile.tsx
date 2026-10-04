@@ -1,119 +1,85 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { RotateCcw } from "lucide-react";
-import { useStore, userById } from "@/lib/store";
-import { reset } from "@/lib/demo";
-import { perform } from "@/lib/api";
-import { Avatar, Card, Eyebrow, RoleBadge, StatusPill } from "@/components/kit";
-import { TripCard } from "@/components/TripCard";
-import { CampusCard } from "@/components/Campus";
-
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ArrowRight, Plus } from "lucide-react";
+import { useAccountDashboard, useSession } from "@/lib/account-api";
+import { AccountTripCard } from "@/components/AccountTripCard";
 export const Route = createFileRoute("/profile")({
-  head: () => ({
-    meta: [
-      { title: "Alex Rivera | ERIDE profile" },
-      {
-        name: "description",
-        content: "Upcoming shared trips, vehicle listings, pending matches and campus impact.",
-      },
-      { property: "og:title", content: "Alex Rivera | ERIDE profile" },
-      {
-        property: "og:description",
-        content: "Upcoming shared trips, vehicle listings, pending matches and campus impact.",
-      },
-    ],
-  }),
+  head: () => ({ meta: [{ title: "My trips | ERIDE" }] }),
   component: Profile,
 });
-
-function Profile() {
-  const trips = useStore((s) => s.trips);
-  const vehicles = useStore((s) => s.vehicles);
-  const busy = useStore((s) => s.busy);
-  const nav = useNavigate();
-  const me = userById("alex");
-  const pending = trips.flatMap((t) =>
-    t.participants.filter((p) => p.status === "PENDING").map((p) => ({ t, p })),
-  );
-  const mine = vehicles.filter((v) => v.ownerId === "sam");
+export function Profile() {
+  const user = useSession().data?.user;
+  const dashboard = useAccountDashboard(user?.id);
+  const trips = dashboard.data?.trips ?? [];
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-8 px-6 pb-20 pt-4 md:px-10">
-      <header className="flex flex-wrap items-center gap-5">
-        <Avatar id={me.id} size={76} />
-        <div className="flex-1">
-          <h1 className="text-3xl font-semibold tracking-tight">{me.name}</h1>
-          <div className="mt-1 text-sm text-muted-foreground">
-            Guided demo account · Trips saved in the database
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <RoleBadge role={me.role} />
-          </div>
+    <main className="account-page">
+      <div className="account-page-heading">
+        <div>
+          <p className="account-eyebrow">Your account</p>
+          <h1>{user?.name.split(" ")[0]}'s trips</h1>
+          <p className="account-muted">Your shared journeys, all in one place.</p>
         </div>
-      </header>
-
-      <section className="space-y-5">
-        <h2 className="text-lg font-bold">Upcoming trips</h2>
-        {trips.map((t) => (
-          <TripCard key={t.id} t={t} />
-        ))}
-        {!trips.length && (
-          <p className="text-muted-foreground">
-            No upcoming trips. Start a trip from the home page.
-          </p>
-        )}
-      </section>
-
-      <div className="grid gap-5 md:grid-cols-2">
-        <Card>
-          <h2 className="text-lg font-bold">
-            My vehicle listings{" "}
-            <span className="text-sm font-normal text-muted-foreground">(Sam, owner)</span>
-          </h2>
-          <div className="mt-4 space-y-2">
-            {mine.map((v) => (
-              <div key={v.id} className="flex items-center justify-between text-sm">
-                <span>
-                  <b>{v.name}</b> · ${v.rate}/hr · {v.window}
-                </span>
-                <StatusPill status={v.status} />
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card>
-          <h2 className="text-lg font-bold">Pending matches</h2>
-          <div className="mt-4 space-y-2">
-            {pending.length === 0 && (
-              <div className="text-sm text-muted-foreground">Nothing waiting on anyone.</div>
-            )}
-            {pending.map(({ t, p }) => (
-              <div key={t.id + p.userId} className="flex items-center gap-3">
-                <Avatar id={p.userId} size={32} />
-                <div className="flex-1 text-sm">
-                  <b>{userById(p.userId).name}</b> for {t.destination}
-                </div>
-                <StatusPill status="PENDING" />
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      <CampusCard />
-
-      <div className="flex items-center justify-between border-t border-border pt-6">
-        <Eyebrow>Restart cancels demo trips and keeps their history</Eyebrow>
-        <button
-          disabled={busy}
-          onClick={() =>
-            void perform(async () => {
-              await reset();
-              await nav({ to: "/" });
-            })
-          }
-          className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-semibold transition hover:bg-sand disabled:opacity-40"
+        <Link
+          className="account-button"
+          to="/trip/$step"
+          params={{ step: "1" }}
+          search={{ trip: undefined }}
         >
-          <RotateCcw className="size-4" /> Restart demo
-        </button>
+          <Plus size={16} />
+          Book a trip
+        </Link>
+      </div>
+      {dashboard.isPending && (
+        <p role="status" className="account-muted">
+          Loading your trips…
+        </p>
+      )}
+      {dashboard.error && (
+        <div className="account-error" role="alert">
+          {dashboard.error.message}
+          <button className="ml-3 underline" onClick={() => void dashboard.refetch()}>
+            Try again
+          </button>
+        </div>
+      )}
+      {!dashboard.isPending && !dashboard.error && !trips.length && (
+        <div className="account-panel account-empty">
+          <h2>Your first shared trip is waiting.</h2>
+          <p className="account-muted">Pick a destination and we'll look for a match.</p>
+          <Link
+            className="account-secondary"
+            to="/trip/$step"
+            params={{ step: "1" }}
+            search={{ trip: undefined }}
+          >
+            Book a trip <ArrowRight size={15} />
+          </Link>
+        </div>
+      )}
+      <div className="grid gap-5">
+        {trips.map((trip) => {
+          const match =
+            trip.status === "cancelled"
+              ? undefined
+              : dashboard.data?.matches.find(
+                  (m) =>
+                    m.status !== "cancelled" &&
+                    m.members.some(
+                      (member) => member.trip_id === trip.id && member.status !== "cancelled",
+                    ),
+                );
+          return (
+            <AccountTripCard key={trip.id} trip={trip} match={match}>
+              <Link
+                className="account-secondary"
+                to="/trip/$step"
+                params={{ step: "2" }}
+                search={{ trip: trip.id }}
+              >
+                View trip <ArrowRight size={15} />
+              </Link>
+            </AccountTripCard>
+          );
+        })}
       </div>
     </main>
   );
