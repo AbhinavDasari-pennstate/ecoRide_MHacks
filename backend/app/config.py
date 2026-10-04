@@ -41,6 +41,16 @@ TWILIO_SMS_TEMPLATE = os.getenv("TWILIO_SMS_TEMPLATE", "")  # trial accounts onl
 # on sends real texts. Notices always appear in the app either way.
 NOTIFY_ON_MATCH = os.getenv("NOTIFY_ON_MATCH", "off").strip().lower() in ("on", "true", "1", "yes")
 
+# --- email (optional) ---
+# One confirmation email per rider when a ride confirms. Sending needs all five of these; with any
+# of them missing the message is written to EMAIL_OUTBOX instead, so it can still be shown.
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = os.getenv("SMTP_PORT", "587")                   # 465 uses implicit TLS, anything else STARTTLS
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")              # a Gmail app password, never the account password
+EMAIL_FROM = os.getenv("EMAIL_FROM", "")
+EMAIL_OUTBOX = os.getenv("EMAIL_OUTBOX", str(Path(__file__).resolve().parents[1] / "outbox.local.log"))
+
 # --- planner ---
 PLANNER_TIMEOUT_S = 20
 PLANNER_MAX_RETRIES = 2

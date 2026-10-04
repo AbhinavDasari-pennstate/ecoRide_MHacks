@@ -11,6 +11,11 @@ bodies, phone numbers or credentials.
 """
 import hashlib
 import logging
+import smtplib
+from datetime import datetime, timezone
+from email.message import EmailMessage
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from app import config, db
 
@@ -148,6 +153,117 @@ def _audience(c, match: dict) -> list[dict]:
                      (sorted(ids),)).fetchall()
 
 
+# ---------------------------------------------------------------- email
+
+SUBJECT = "Your ecoRide trip is confirmed"
+
+
+def email_configured() -> bool:
+    return all((config.SMTP_HOST, config.SMTP_PORT, config.SMTP_USER,
+                config.SMTP_PASSWORD, config.EMAIL_FROM))
+
+
+def _body(match: dict) -> str:
+    """The same wording, fare and CO2 figures the app and the agent use. Code computed all of them."""
+    depart = datetime.fromisoformat(match["depart_time"]).astimezone(ZoneInfo(config.TIMEZONE))
+    impact = match.get("impact") or {}
+    vehicle = match.get("vehicle") or {}
+    lines = [
+        "Your ecoRide trip is confirmed.",
+        "",
+        match["summary"],
+        "",
+        f"Departure: {depart:%A %d %B} at {depart:%I:%M %p} ({config.TIMEZONE})",
+        f"Vehicle: {vehicle.get('make_model', 'the driver and their own car')}",
+    ]
+    if match.get("cost_per_person_cents") is not None:
+        lines.append(f"Cost per person: ${match['cost_per_person_cents'] / 100:.2f}")
+    if impact.get("kg_co2_avoided") is not None:
+        lines.append(f"CO2 avoided versus everyone driving separately: {impact['kg_co2_avoided']:.2f} kg"
+                     f" ({impact.get('percent_reduction', 0):.0f}% less)")
+        equivalents = impact.get("equivalents") or {}
+        if equivalents:
+            lines.append(f"About {equivalents.get('tree_seedlings_10yr')} tree seedlings grown for ten"
+                         f" years, or {equivalents.get('smartphone_charges')} smartphone charges.")
+    lines += ["", "These are projected estimates, not measured emissions.", "", "ecoRide, Ann Arbor"]
+    return "\n".join(lines)
+
+
+def _write_outbox(to: str, subject: str, body: str) -> None:
+    """No SMTP configured, so keep the message where it can still be read out."""
+    stamp = datetime.now(timezone.utc).astimezone(ZoneInfo(config.TIMEZONE))
+    block = (f"\n{'=' * 78}\n{stamp:%Y-%m-%d %H:%M:%S %Z}\nTo: {to}\nSubject: {subject}\n"
+             f"{'-' * 78}\n{body}\n")
+    path = Path(config.EMAIL_OUTBOX)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(block)
+
+
+def send_email(to: str, subject: str, body: str) -> str:
+    """-> "smtp" when it left the building, "outbox" when it was written to the local log.
+    Never logs the body, the address or the credentials."""
+    if not email_configured():
+        _write_outbox(to, subject, body)
+        return "outbox"
+    message = EmailMessage()
+    message["From"] = config.EMAIL_FROM
+    message["To"] = to
+    message["Subject"] = subject
+    message.set_content(body)
+    port = int(config.SMTP_PORT or 587)
+    if port == 465:
+        with smtplib.SMTP_SSL(config.SMTP_HOST, port, timeout=20) as server:
+            server.login(config.SMTP_USER, config.SMTP_PASSWORD)
+            server.send_message(message)
+    else:
+        with smtplib.SMTP(config.SMTP_HOST, port, timeout=20) as server:
+            server.starttls()
+            server.login(config.SMTP_USER, config.SMTP_PASSWORD)
+            server.send_message(message)
+    return "smtp"
+
+
+def _email_audience(c, match: dict) -> list[dict]:
+    """Travellers who have a web account to email. The car's owner is told by text, not email."""
+    ids = [m["user_id"] for m in match["members"] if m["status"] != "cancelled"]
+    if not ids:
+        return []
+    return c.execute("select a.user_id as id, a.email, u.name from auth_accounts a"
+                     " join users u on u.id = a.user_id where a.user_id = any(%s::int[]) order by a.user_id",
+                     (ids,)).fetchall()
+
+
+def email_confirmation(match_id: int) -> list[dict]:
+    """One confirmation per rider per confirmed ride, deduped exactly like the texts. Never raises."""
+    try:
+        from app import apply
+        match = apply.get_match(match_id)
+        if not match or match["status"] != "confirmed":
+            return []
+        state = _match_state(match)
+        body = _body(match)
+        with db.conn() as c:
+            people = _email_audience(c, match)
+        out = []
+        for person in people:
+            if already_sent("email", "confirmed", person["id"], f"match:{match_id}", state,
+                            within_minutes=MATCH_REPEAT_MINUTES):
+                continue
+            try:
+                where = send_email(person["email"], SUBJECT, body)
+            except Exception as e:
+                log.warning("confirmation email failed for user %s (%s)", person["id"], type(e).__name__)
+                continue                     # no ledger row, so a later retry can still deliver it
+            record_sent("email", "confirmed", person["id"], f"match:{match_id}", state,
+                        match_id=match_id, delivered=where)
+            out.append({"user_id": person["id"], "delivered": where})
+        return out
+    except Exception as e:
+        log.warning("confirmation emails failed (%s); the ride itself is unaffected", type(e).__name__)
+        return []
+
+
 def match_state_changed(match_id: int) -> list[dict]:
     """Call once the transaction has committed. Delivers at most one notice per person, ride,
     event and wording, so a replan loop cannot text anyone twice. Never raises."""
@@ -186,6 +302,8 @@ def match_state_changed(match_id: int) -> list[dict]:
             record_sent("match", notice, person["id"], f"match:{match_id}", state,
                         match_id=match_id, text=text, delivered=channel)
             delivered.append({"user_id": person["id"], "notice": notice, "delivered": channel})
+        if notice == "confirmed":
+            delivered += email_confirmation(match_id)
         return delivered
     except Exception as e:
         log.warning("match notices failed (%s); the ride itself is unaffected", type(e).__name__)
