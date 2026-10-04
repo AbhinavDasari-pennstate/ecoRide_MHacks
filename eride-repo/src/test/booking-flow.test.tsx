@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     matches: [] as ApiMatch[],
     vehicles: [] as AccountVehicle[],
   },
+  notifications: undefined as { notifications: unknown[] } | undefined,
   request: vi.fn(),
   navigate: vi.fn(),
   refetch: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("@/lib/account-api", () => ({
   useSession: () => ({ data: { user: mocks.user } }),
   useCampusImpact: () => ({ data: undefined }),
   useVoiceAgent: () => ({ data: undefined }),
+  useNotifications: () => ({ data: mocks.notifications }),
   useAccountDashboard: () => ({
     data: mocks.dashboard,
     isPending: false,
@@ -51,6 +53,7 @@ beforeEach(() => {
   mocks.trip = undefined;
   mocks.user = { id: 42, name: "Taylor", email: "taylor@example.com", role: "rider" };
   mocks.dashboard = { trips: [], matches: [], vehicles: [] };
+  mocks.notifications = undefined;
   mocks.request.mockReset();
   mocks.navigate.mockReset();
   mocks.refetch.mockReset();
@@ -304,6 +307,41 @@ describe("account booking", () => {
       "/buyer",
     );
     expect(screen.queryByRole("link", { name: "Book a trip" })).not.toBeInTheDocument();
+  });
+
+  it("shows ride notices on the profile and says how each was delivered", () => {
+    mocks.notifications = {
+      notifications: [
+        {
+          id: 2,
+          ts: "2099-10-10T18:00:00Z",
+          notice: "confirmed",
+          text: "ecoRide: Your ride is confirmed. Alex drives Maya to Meijer.",
+          delivered: "sms",
+          match_id: 7,
+        },
+        {
+          id: 1,
+          ts: "2099-10-10T17:00:00Z",
+          notice: "proposed",
+          text: "ecoRide: We found you a ride. Alex drives Maya to Meijer.",
+          delivered: "in_app",
+          match_id: 7,
+        },
+      ],
+    };
+    renderPage(<Profile />);
+    expect(screen.getByRole("region", { name: "Notifications" })).toBeInTheDocument();
+    expect(screen.getByText("Your ride is confirmed")).toBeInTheDocument();
+    expect(screen.getByText("We found you a ride")).toBeInTheDocument();
+    expect(screen.getByText(/sent by text/)).toBeInTheDocument();
+    expect(screen.getByText(/shown here only/)).toBeInTheDocument();
+  });
+
+  it("hides the notifications panel when there is nothing to show", () => {
+    mocks.notifications = { notifications: [] };
+    renderPage(<Profile />);
+    expect(screen.queryByRole("region", { name: "Notifications" })).not.toBeInTheDocument();
   });
 
   it("does not attach a continuing group to a cancelled trip in the profile", () => {

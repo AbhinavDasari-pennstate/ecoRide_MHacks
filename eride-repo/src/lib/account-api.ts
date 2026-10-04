@@ -84,6 +84,25 @@ export function useAccountDashboard(userId: number | undefined) {
   });
 }
 
+export type RideNotification = {
+  id: number;
+  ts: string;
+  notice: "proposed" | "confirmed" | "vehicle_changed";
+  text: string;
+  delivered: "sms" | "in_app" | null;
+  match_id: number | null;
+};
+
+export function useNotifications(enabled: boolean) {
+  return useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => accountRequest<{ notifications: RideNotification[] }>("/me/notifications"),
+    enabled,
+    refetchInterval: 5000,
+    retry: false,
+  });
+}
+
 export function useCampusImpact() {
   return useQuery({
     queryKey: ["impact"],

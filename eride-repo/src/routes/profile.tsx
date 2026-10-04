@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, Plus } from "lucide-react";
-import { useAccountDashboard, useSession } from "@/lib/account-api";
+import { useAccountDashboard, useNotifications, useSession } from "@/lib/account-api";
 import { AccountTripCard } from "@/components/AccountTripCard";
+import { Notifications } from "@/components/Notifications";
 export const Route = createFileRoute("/profile")({
   head: () => ({ meta: [{ title: "My trips | ERIDE" }] }),
   component: Profile,
@@ -9,6 +10,7 @@ export const Route = createFileRoute("/profile")({
 export function Profile() {
   const user = useSession().data?.user;
   const dashboard = useAccountDashboard(user?.id);
+  const notifications = useNotifications(user !== undefined && user !== null);
   const trips = dashboard.data?.trips ?? [];
   return (
     <main className="account-page">
@@ -55,6 +57,7 @@ export function Profile() {
           </Link>
         </div>
       )}
+      <Notifications items={notifications.data?.notifications ?? []} />
       {dashboard.data?.impact?.trips ? (
         <section className="account-panel mb-5" aria-labelledby="profile-impact">
           <p className="account-eyebrow">Your impact</p>

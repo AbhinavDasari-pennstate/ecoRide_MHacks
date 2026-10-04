@@ -240,6 +240,12 @@ def my_dashboard(actor=Depends(auth.require_user)):
     return apply.dashboard(actor["id"])
 
 
+@app.get("/me/notifications")
+def my_notifications(limit: int = Query(20, ge=1, le=100), actor=Depends(auth.require_user)):
+    """The signed-in account's own ride notices. Shown in the app whether or not a text went out."""
+    return apply.my_notifications(actor["id"], limit)
+
+
 @app.get("/vehicles")
 def vehicles(owner_id: Optional[int] = None, active: Optional[bool] = True,
              limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0),

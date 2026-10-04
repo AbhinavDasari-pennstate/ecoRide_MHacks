@@ -37,6 +37,9 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")  # E.164, e.g. +17345550199
 TWILIO_SMS_TEMPLATE = os.getenv("TWILIO_SMS_TEMPLATE", "")  # trial accounts only send templates, e.g. sms_appointment_reminders
+# Text travellers and owners when a match forms, confirms or changes car. Off by default: turning it
+# on sends real texts. Notices always appear in the app either way.
+NOTIFY_ON_MATCH = os.getenv("NOTIFY_ON_MATCH", "off").strip().lower() in ("on", "true", "1", "yes")
 
 # --- planner ---
 PLANNER_TIMEOUT_S = 20

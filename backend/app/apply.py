@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import psycopg
 
-from app import config, core, db, maps, planner
+from app import config, core, db, maps, notify, planner
 
 _lock = threading.Lock()   # ponytail: single process; the advisory lock only guards the DB side
 
@@ -104,7 +104,13 @@ def run_planning(trigger: str, trip_id: int | None = None, *, match_id: int | No
         try:
             with db.conn() as c:
                 db.lock(c)
-                return _run(c, trigger, trip_id, match_id, cause, mode, dry_run, plan)
+                out = _run(c, trigger, trip_id, match_id, cause, mode, dry_run, plan)
+            # Outside the transaction on purpose: a notice must never be sent for a match that
+            # rolled back, and a provider call must never run while holding the planning lock.
+            if not dry_run:
+                for mid in out.get("match_ids", []):
+                    notify.match_state_changed(mid)
+            return out
         except Exception as e:
             with db.conn() as c:
                 db.event(c, "planning_failed", {"trigger": trigger, "trip_id": trip_id, "match_id": match_id,
@@ -569,6 +575,7 @@ def accept(match_id: int, user_id: int) -> dict:
                       (match_id, mm["trip_id"]))
             db.event(c, "member_accepted", {"match_id": match_id, "trip_id": mm["trip_id"], "user_id": user_id})
         _maybe_confirm(c, match_id)
+    notify.match_state_changed(match_id)       # after the commit: an accept can be the one that confirms
     return get_match(match_id)
 
 
@@ -582,6 +589,7 @@ def approve_booking(booking_id: int) -> dict:
             b = c.execute("update bookings set status = 'approved' where id = %s returning *", (booking_id,)).fetchone()
             db.event(c, "booking_approved", {"booking_id": booking_id, "match_id": b["match_id"]})
         _maybe_confirm(c, b["match_id"])
+    notify.match_state_changed(b["match_id"])   # after the commit: approval is usually what confirms
     return {"booking": _out(b), "match": get_match(b["match_id"])}
 
 
@@ -766,6 +774,19 @@ def events(since_id: int = 0, limit: int = 200) -> dict:
     with db.conn() as c:
         rows = c.execute("select * from events where id > %s order by id limit %s", (since_id, limit)).fetchall()
     return {"events": [_out(r) for r in rows], "last_id": rows[-1]["id"] if rows else since_id}
+
+
+def my_notifications(user_id: int, limit: int = 20) -> dict:
+    """This person's own ride notices, newest first. Shown in the app so the demo still has
+    something to point at when a text cannot carry the details."""
+    with db.conn() as c:
+        rows = c.execute("select id, ts, payload from events where kind = %s"
+                         " and payload->>'channel' = 'match' and payload->>'user_id' = %s"
+                         " and payload ? 'text' order by id desc limit %s",
+                         (notify.LEDGER, str(user_id), limit)).fetchall()
+    return {"notifications": [{"id": r["id"], "ts": _out(r)["ts"], "notice": r["payload"]["notice"],
+                               "text": r["payload"]["text"], "delivered": r["payload"].get("delivered"),
+                               "match_id": r["payload"].get("match_id")} for r in rows]}
 
 
 def agent_runs(limit: int = 50) -> list[dict]:
