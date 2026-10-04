@@ -20,6 +20,20 @@ EXPLAIN = os.getenv("EXPLAIN", "template")                  # template | gemini
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")  # fastest reliable Flash in an Oct 3 probe (3.7/3.8 were overloaded); 2.5 is closed to new keys
 GEMINI_BACKUP_MODEL = os.getenv("GEMINI_BACKUP_MODEL", "gemini-3.5-flash-lite")  # used after a 429/5xx from GEMINI_MODEL
 
+# --- voice agent and texting (scripts/setup_voice.py fills the ELEVENLABS_* ids) ---
+API_TOKEN = os.getenv("API_TOKEN", "")                      # the voice scripts' name for API_SERVICE_TOKEN; either works
+PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")        # https tunnel to this server, e.g. an ngrok URL
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_AGENT_ID = os.getenv("ELEVENLABS_AGENT_ID", "")
+ELEVENLABS_MCP_SERVER_ID = os.getenv("ELEVENLABS_MCP_SERVER_ID", "")
+ELEVENLABS_PHONE_NUMBER_ID = os.getenv("ELEVENLABS_PHONE_NUMBER_ID", "")
+ELEVENLABS_LLM = os.getenv("ELEVENLABS_LLM", "gemini-2.5-flash")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "")  # empty = ElevenLabs' default voice
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")  # E.164, e.g. +17345550199
+TWILIO_SMS_TEMPLATE = os.getenv("TWILIO_SMS_TEMPLATE", "")  # trial accounts only send templates, e.g. sms_appointment_reminders
+
 # --- planner ---
 PLANNER_TIMEOUT_S = 20
 PLANNER_MAX_RETRIES = 2
@@ -52,6 +66,10 @@ ELECTRICITY_USD_PER_KWH = 0.2305
 
 TIMEZONE = "America/Detroit"
 ANN_ARBOR = (42.2808, -83.7430)
+# Demo destinations, matched by substring before geocoding so every "Meijer" trip lands on the same store
+# (Meijer #64, OpenStreetMap building coords). ponytail: a dict, not a places table
+KNOWN_PLACES = {"meijer": {"dest_name": "Meijer (Ann Arbor-Saline Rd)", "dest_place_id": None,
+                           "dest_lat": 42.2394, "dest_lng": -83.7660}}
 
 # name -> (unit, source). Shipped inside every `assumptions` object.
 SOURCES = {

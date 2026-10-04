@@ -110,12 +110,17 @@ def principal(request: Request):
         if user:
             return user
         raise HTTPException(401, "Please sign in again")
-    authorization = request.headers.get("authorization", "")
-    if config.API_SERVICE_TOKEN and secrets.compare_digest(
-        authorization.encode(), f"Bearer {config.API_SERVICE_TOKEN}".encode()
-    ):
+    bearer = request.headers.get("authorization", "")
+    if service_token_ok(request.headers.get("x-api-key") or (bearer[7:] if bearer.startswith("Bearer ") else None)):
         return {"service": True}
     raise HTTPException(401, "Sign in to continue")
+
+
+def service_token_ok(token: str | None) -> bool:
+    """The adapter token: API_SERVICE_TOKEN, or API_TOKEN as the voice setup script names it.
+    None configured = no service access."""
+    expected = config.API_SERVICE_TOKEN or config.API_TOKEN
+    return bool(expected and token) and secrets.compare_digest(token.strip().encode(), expected.encode())
 
 
 def require_user(request: Request):

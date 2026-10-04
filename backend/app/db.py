@@ -26,7 +26,10 @@ _pool_lock = threading.Lock()
 def _url(direct: bool = False) -> str:
     if config.DATABASE_URL == "local":
         import pgserver  # dev only (requirements-dev.txt)
-        path = os.getenv("LOCAL_DATABASE_PATH") or str(Path(os.getenv("LOCALAPPDATA", Path.home() / ".local/share")) / "campus-rides-pg")
+        base = (os.getenv("LOCALAPPDATA")                            # Windows
+                or os.getenv("XDG_DATA_HOME")                        # Linux
+                or os.path.expanduser("~/.local/share"))             # macOS and the XDG default
+        path = os.getenv("LOCAL_DATABASE_PATH") or os.path.join(base, "campus-rides-pg")
         return pgserver.get_server(path, cleanup_mode=None).get_uri()
     if direct and not config.DATABASE_URL_DIRECT:
         raise ValueError("Set DATABASE_URL_DIRECT to the direct Neon connection string before migrating")

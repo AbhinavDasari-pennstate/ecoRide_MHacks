@@ -1,8 +1,9 @@
-"""HTTP layer: thin routes over app.apply. Run with `uvicorn app.main:app` from the backend root.
-LookupError -> 404, ValueError -> 422. Planning after POST /trips runs as a background task;
-the other state changes replan synchronously inside apply and return the diff."""
-from datetime import datetime
+"""HTTP layer: thin routes over app.apply, plus the voice agent's MCP server at /mcp.
+Run with `uvicorn app.main:app` from the backend root. LookupError -> 404, ValueError -> 422.
+Planning after POST /trips runs as a background task (or inline with ?wait=true); the other state
+changes replan synchronously inside apply and return the diff."""
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Literal, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
@@ -12,13 +13,28 @@ from pydantic import BaseModel, ConfigDict, Field
 import psycopg
 from psycopg_pool import PoolTimeout
 
-from app import apply, auth, config, db
+from app import apply, auth, config, db, voice
 
 
 @asynccontextmanager
 async def lifespan(app):
-    yield
+    sm = voice.mcp.session_manager
+    sm._has_started = False   # ponytail: the SDK refuses a 2nd run() though run() fully resets on exit; tests start the app many times
+    async with sm.run():      # the mounted MCP app's lifespan doesn't run on its own
+        yield
     db.close_pool()
+
+
+def service_only(asgi):
+    """Guards the mounted MCP app (FastAPI dependencies don't reach mounts): the voice agent sends the
+    service token as `X-Api-Key` or `Authorization: Bearer`. No token configured = closed."""
+    async def gate(scope, receive, send):
+        if scope["type"] == "http" and scope["method"] != "OPTIONS":
+            h = {k.decode().lower(): v.decode() for k, v in scope["headers"]}
+            if not auth.service_token_ok(h.get("x-api-key") or h.get("authorization", "").removeprefix("Bearer ")):
+                return await JSONResponse({"detail": "missing or wrong API token"}, status_code=401)(scope, receive, send)
+        await asgi(scope, receive, send)
+    return gate
 
 
 app = FastAPI(title="Campus Rides", lifespan=lifespan)
@@ -140,6 +156,19 @@ class VehicleChoiceIn(InputModel):
     vehicle_id: int = Field(gt=0)
 
 
+class TextIn(InputModel):
+    match_id: Optional[int] = None   # default: the user's latest ride
+
+
+class CallIn(InputModel):
+    reason: str = Field(min_length=1, max_length=200)   # short phrase the agent opens with, e.g. "confirm your seat"
+
+
+class InitiationIn(BaseModel):
+    # ElevenLabs also sends agent_id, called_number, call_sid and conversation_id; only the caller matters.
+    caller_id: Optional[str] = None
+
+
 class PlannerRunIn(InputModel):
     trip_id: Optional[int] = None
     match_id: Optional[int] = None
@@ -153,7 +182,9 @@ class PlannerRunIn(InputModel):
 @app.get("/health")
 def health():
     return {"ok": True, "planner": config.PLANNER, "maps": "live" if config.MAPS_SERVER_KEY else "offline",
-            "gemini": "configured" if config.GEMINI_API_KEY else "missing"}
+            "gemini": "configured" if config.GEMINI_API_KEY else "missing",
+            "voice": "configured" if config.ELEVENLABS_AGENT_ID and config.ELEVENLABS_PHONE_NUMBER_ID else "missing",
+            "sms": "configured" if config.TWILIO_ACCOUNT_SID and config.TWILIO_PHONE_NUMBER else "missing"}
 
 
 @app.post("/demo/bootstrap")
@@ -222,11 +253,43 @@ def vehicles(owner_id: Optional[int] = None, active: Optional[bool] = True,
 
 
 @app.post("/trips")
-def create_trip(body: TripIn, tasks: BackgroundTasks, actor=Depends(auth.principal)):
+def create_trip(body: TripIn, tasks: BackgroundTasks, wait: bool = False, actor=Depends(auth.principal)):
     auth.require_role(actor, "rider", "owner")
     trip = apply.create_trip({**body.model_dump(), "user_id": auth.identity(actor, body.user_id)})
+    if wait:   # voice and chat clients want the answer in the same request
+        apply.run_planning("trip_created", trip["id"])
+        return {"trip": trip, "planning": "done", "matches": apply.matches_for_trip(trip["id"])}
     tasks.add_task(apply.run_planning, "trip_created", trip["id"])
     return {"trip": trip, "planning": "queued"}
+
+
+# Voice and texting: trusted server callers only (phone lookups would leak who uses the app).
+
+@app.get("/users")
+def find_user(phone: str, actor=Depends(auth.require_service)):
+    return apply.find_user(phone)
+
+
+@app.get("/users/{user_id}/rides")
+def user_rides(user_id: int, actor=Depends(auth.require_service)):
+    return apply.user_rides(user_id)
+
+
+@app.post("/users/{user_id}/text")
+def text_user(user_id: int, body: TextIn, actor=Depends(auth.require_service)):
+    return voice.text_ride(user_id, body.match_id)
+
+
+@app.post("/users/{user_id}/call")
+def call_user(user_id: int, body: CallIn, actor=Depends(auth.require_service)):
+    return voice.call_user(user_id, body.reason)
+
+
+@app.post("/voice/initiation")
+def voice_initiation(body: InitiationIn, actor=Depends(auth.require_service)):
+    """ElevenLabs' conversation initiation webhook for inbound calls: the caller's dynamic variables.
+    setup_voice.py registers the URL with the service token as its X-Api-Key header."""
+    return voice.initiation(body.caller_id)
 
 
 @app.patch("/trips/{trip_id}")
@@ -339,3 +402,6 @@ def retry_trip_plan(trip_id: int, actor=Depends(auth.principal)):
 def buyer_dataset(actor=Depends(auth.require_user)):
     auth.require_role(actor, "buyer")
     return apply.buyer_dataset()
+
+
+app.mount("/", service_only(voice.mcp_app))   # last, so every route above wins; the voice agent's MCP endpoint at POST /mcp
