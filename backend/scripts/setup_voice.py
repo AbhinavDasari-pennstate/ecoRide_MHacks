@@ -177,6 +177,19 @@ def upsert_agent(mcp_id: str) -> str:
     return agent_id
 
 
+def register_initiation_webhook(agent_id: str, url: str) -> None:
+    """Point ElevenLabs at /voice/initiation so inbound calls get their dynamic variables, and opt this
+    agent in. Re-asserted on every run, so a new PUBLIC_URL moves the webhook with it. The workspace
+    holds one webhook URL for every agent; the per-agent flag decides who uses it."""
+    el("PATCH", "/settings", json={"conversation_initiation_client_data_webhook": {
+        "url": url, "request_headers": {"X-Api-Key": config.API_TOKEN}}})
+    # Read-modify-write: PATCHing one key would drop the sibling override settings.
+    overrides = ((el("GET", f"/agents/{agent_id}") or {}).get("platform_settings") or {}).get("overrides") or {}
+    overrides["enable_conversation_initiation_client_data_from_webhook"] = True
+    el("PATCH", f"/agents/{agent_id}", json={"platform_settings": {"overrides": overrides}})
+    print(f"  inbound calls fetch their variables from {url}")
+
+
 def twilio_number(buy: bool) -> str:
     if config.TWILIO_PHONE_NUMBER:
         return config.TWILIO_PHONE_NUMBER
@@ -227,10 +240,11 @@ def main(argv: list[str]) -> None:
     if errors:
         die("; ".join(errors))
     url = config.PUBLIC_URL + "/mcp"
-    print("1/4 checking the tunnel");      check_public_url(url)
-    print("2/4 registering MCP server");   mcp_id = register_mcp(url)
-    print("3/4 creating the agent");       agent_id = upsert_agent(mcp_id)
-    print("4/4 phone number")
+    print("1/5 checking the tunnel");      check_public_url(url)
+    print("2/5 registering MCP server");   mcp_id = register_mcp(url)
+    print("3/5 creating the agent");       agent_id = upsert_agent(mcp_id)
+    print("4/5 inbound call variables");   register_initiation_webhook(agent_id, config.PUBLIC_URL + "/voice/initiation")
+    print("5/5 phone number")
     number = ""
     if not args.browser_only:
         number = twilio_number(args.buy_number)

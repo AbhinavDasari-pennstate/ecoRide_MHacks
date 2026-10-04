@@ -111,6 +111,11 @@ class CallIn(BaseModel):
     reason: str                      # short phrase the agent opens with, e.g. "confirm your seat"
 
 
+class InitiationIn(BaseModel):
+    # ElevenLabs also sends agent_id, called_number, call_sid and conversation_id; only the caller matters.
+    caller_id: Optional[str] = None
+
+
 class PlannerRunIn(BaseModel):
     trip_id: Optional[int] = None
     dry_run: bool = False
@@ -156,6 +161,13 @@ def text_user(user_id: int, body: TextIn):
 @app.post("/users/{user_id}/call")
 def call_user(user_id: int, body: CallIn):
     return voice.call_user(user_id, body.reason)
+
+
+@app.post("/voice/initiation")
+def voice_initiation(body: InitiationIn):
+    """ElevenLabs' conversation initiation webhook for inbound calls: the caller's dynamic variables.
+    Guarded by the same API_TOKEN as every other route; setup_voice.py registers the URL and header."""
+    return voice.initiation(body.caller_id)
 
 
 @app.patch("/trips/{trip_id}")

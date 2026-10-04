@@ -113,6 +113,27 @@ def test_request_ride_defaults_and_say(monkeypatch):
     assert (made["window_end"] - made["window_start"]).total_seconds() == 45 * 60 and made["needs_vehicle"] is None
 
 
+def test_initiation_supplies_every_variable(monkeypatch):
+    """A missing variable ends an inbound call before it starts, so every placeholder must come back."""
+    monkeypatch.setattr(apply, "find_user", lambda phone: USER)
+    monkeypatch.setattr(apply, "user_rides", lambda uid: RIDES)
+    known = voice.initiation(USER["phone"])
+    assert known["type"] == "conversation_initiation_client_data"
+    assert set(known["dynamic_variables"]) == set(voice.PLACEHOLDERS)
+    assert known["dynamic_variables"]["user_name"] == "Maya" and known["dynamic_variables"]["user_id"] == "2"
+    assert "Maya" in known["dynamic_variables"]["greeting"]
+    assert known["dynamic_variables"]["call_reason"] == "inbound"
+    assert known["dynamic_variables"]["ride_summary"] == "Alex drives Maya to Meijer."
+
+    def missing(phone):
+        raise LookupError("no user with a phone number ending in 0000")
+    monkeypatch.setattr(apply, "find_user", missing)
+    for caller in ("+19995550000", "", None):   # unknown, empty and absent all keep the call alive
+        out = voice.initiation(caller)
+        assert set(out["dynamic_variables"]) == set(voice.PLACEHOLDERS)
+        assert out["dynamic_variables"] == voice.PLACEHOLDERS
+
+
 # ---------------------------------------------------------------- API token gate
 
 def test_token_gate(monkeypatch):
@@ -154,6 +175,10 @@ def test_setup_voice_flow(monkeypatch, tmp_path):
         routes = {("POST", "/v1/convai/mcp-servers"): {"id": "mcp2"},
                   ("GET", "/v1/convai/agents"): {"agents": []},
                   ("POST", "/v1/convai/agents/create"): {"agent_id": "ag9"},
+                  ("PATCH", "/v1/convai/settings"): {},
+                  # the initiation webhook reads the agent back before merging its overrides
+                  ("GET", "/v1/convai/agents/ag9"): {"platform_settings": {"overrides": {"custom_llm_extra_body": False}}},
+                  ("PATCH", "/v1/convai/agents/ag9"): {},
                   ("GET", "/v1/convai/phone-numbers"): [],
                   ("POST", "/v1/convai/phone-numbers"): {"phone_number_id": "pn9"},
                   ("PATCH", "/v1/convai/phone-numbers/pn9"): {}}
@@ -168,6 +193,11 @@ def test_setup_voice_flow(monkeypatch, tmp_path):
     agent = body[("POST", "/v1/convai/agents/create")]["conversation_config"]["agent"]
     assert agent["prompt"]["mcp_server_ids"] == ["mcp2"] and agent["first_message"] == "{{greeting}}"
     assert agent["dynamic_variables"]["dynamic_variable_placeholders"] == voice.PLACEHOLDERS
+    hook = body[("PATCH", "/v1/convai/settings")]["conversation_initiation_client_data_webhook"]
+    assert hook == {"url": "https://demo.ngrok.app/voice/initiation", "request_headers": {"X-Api-Key": "tok123"}}
+    # the agent opts in without losing the override settings it already had
+    assert body[("PATCH", "/v1/convai/agents/ag9")]["platform_settings"]["overrides"] == {
+        "custom_llm_extra_body": False, "enable_conversation_initiation_client_data_from_webhook": True}
     assert body[("POST", "/v1/convai/phone-numbers")]["provider"] == "twilio"
     assert body[("PATCH", "/v1/convai/phone-numbers/pn9")] == {"agent_id": "ag9"}
     assert not any(r.method == "DELETE" for r in seen)

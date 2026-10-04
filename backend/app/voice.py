@@ -107,6 +107,21 @@ def call_user(user_id: int, reason: str) -> dict:
     return {"calling": user["name"], "conversation_id": data.get("conversation_id")}
 
 
+def initiation(caller_id: str | None) -> dict:
+    """ElevenLabs asks who is calling before an inbound call connects. Every variable the prompt and the
+    first message use has to come back or the call drops at once, so start from PLACEHOLDERS and never
+    raise: an unrecognised number still gets a working conversation, and the agent asks for it instead."""
+    variables = dict(PLACEHOLDERS)   # call_reason "inbound", a generic greeting, no user
+    try:
+        user, summary = _latest(apply.find_user(caller_id or "")["id"])
+        variables |= {"user_id": str(user["id"]), "user_name": user["name"], "ride_summary": summary,
+                      "greeting": f"Hi {user['name']}, this is Eco from ecoRide."
+                                  " Do you want to book a ride, or check on one?"}
+    except (LookupError, ValueError):
+        pass
+    return {"type": "conversation_initiation_client_data", "dynamic_variables": variables}
+
+
 # ---------------------------------------------------------------- MCP tools for the agent
 
 mcp = MCPServer(name="ecoRide", instructions=(
