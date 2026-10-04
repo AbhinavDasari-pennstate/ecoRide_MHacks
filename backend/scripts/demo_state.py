@@ -1,5 +1,6 @@
-"""Restore the live-call demo: the seeded users and vehicles, with Maya and Jordan already waiting for
-Meijer in the scenario window and no other trips. Run this before each phone call; it is idempotent.
+"""Restore the live-call demo in one command: the seeded users and vehicles, with Maya and Jordan
+already waiting for Meijer in the scenario window, web logins for everyone on stage, and no other
+trips or matches. Run this before each phone call; it is idempotent.
 The caller (DEMO_PHONES) posts the driver trip on the call itself, which is what forms the match.
     python scripts/demo_state.py"""
 import os
@@ -11,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app import apply, config  # noqa: E402
 
+import demo_accounts  # noqa: E402  (web logins on the seeded users)
 import seed  # noqa: E402  (scripts/seed.py: schema, 7 users, 4 vehicles, no trips)
 
 TZ = ZoneInfo(config.TIMEZONE)
@@ -34,9 +36,13 @@ def main() -> None:
     for name, vid in out["vehicles"].items():
         owner = seed.USERS[seed.VEHICLES[vid - 1][0] - 1][0]
         print(f"  vehicle {vid}: {owner}'s {name}")
+    # seed.reset() truncates users with cascade, so the logins go back on afterwards.
+    accounts = demo_accounts.create()
+    demo_accounts.write_file(accounts)
     caller = ", ".join(f"{n}={p}" for n, p in seed.DEMO_PHONES.items()) or "(DEMO_PHONES is empty)"
     print(f"\nReady. Caller: {caller}")
     print("Dial the Twilio number and ask to drive to Meijer in that window.")
+    demo_accounts.report(accounts)
 
 
 if __name__ == "__main__":

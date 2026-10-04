@@ -4,6 +4,14 @@ import { useVoiceAgent } from "@/lib/account-api";
 
 const WIDGET_SRC = "https://unpkg.com/@elevenlabs/convai-widget-embed";
 
+/** +16282779064 reads as "+1 628-277-9064". Anything else is shown as given. */
+export function formatPhone(e164: string): string {
+  const digits = e164.replace(/\D/g, "");
+  if (!(e164.startsWith("+1") && digits.length === 11)) return e164;
+  const area = digits.slice(1, 4);
+  return `+1 ${area}-${digits.slice(4, 7)}-${digits.slice(7)}`;
+}
+
 /**
  * "Talk to Eco": mounts the ElevenLabs web widget on demand so the landing page never loads a
  * third-party script until someone asks for it. The Twilio number is the fallback on phones.
@@ -48,7 +56,7 @@ export function TalkToAgent() {
       {agent?.phone && (
         <a className="account-muted inline-flex items-center gap-2" href={`tel:${agent.phone}`}>
           <Phone size={15} />
-          or call {agent.phone}
+          or call {formatPhone(agent.phone)}
         </a>
       )}
       <div ref={slot} />

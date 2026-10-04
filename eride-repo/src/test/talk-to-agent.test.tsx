@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { TalkToAgent } from "@/components/TalkToAgent";
+import { TalkToAgent, formatPhone } from "@/components/TalkToAgent";
 
 const mocks = vi.hoisted(() => ({
   agent: undefined as { agent_id: string; phone: string } | undefined,
@@ -18,10 +18,22 @@ describe("Talk to Eco", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("shows a US number in a readable form and dials the raw one", () => {
+    expect(formatPhone("+16282779064")).toBe("+1 628-277-9064");
+    expect(formatPhone("+447700900123")).toBe("+447700900123");
+    expect(formatPhone("")).toBe("");
+    mocks.agent = { agent_id: "agent_123", phone: "+16282779064" };
+    render(<TalkToAgent />);
+    expect(screen.getByRole("link", { name: /call \+1 628-277-9064/ })).toHaveAttribute(
+      "href",
+      "tel:+16282779064",
+    );
+  });
+
   it("mounts the ElevenLabs widget on click and offers the phone number", () => {
     mocks.agent = { agent_id: "agent_123", phone: "+17345550199" };
     render(<TalkToAgent />);
-    expect(screen.getByRole("link", { name: /call \+17345550199/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /call \+1 734-555-0199/ })).toHaveAttribute(
       "href",
       "tel:+17345550199",
     );
