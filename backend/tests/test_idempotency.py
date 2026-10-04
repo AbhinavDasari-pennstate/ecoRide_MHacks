@@ -100,6 +100,9 @@ def twilio(monkeypatch):
     for key, value in {"TWILIO_ACCOUNT_SID": "ACtest", "TWILIO_AUTH_TOKEN": "tok",
                        "TWILIO_PHONE_NUMBER": "+17345550199", "TWILIO_SMS_TEMPLATE": ""}.items():
         monkeypatch.setattr(config, key, value)
+    # These tests count only the texts an explicit tool call sends, so match notices stay off
+    # whatever the developer's .env happens to say.
+    monkeypatch.setattr(config, "NOTIFY_ON_MATCH", False)
     sent = []
 
     def record(request):
