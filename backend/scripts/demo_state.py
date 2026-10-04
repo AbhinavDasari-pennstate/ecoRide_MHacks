@@ -27,10 +27,13 @@ def main() -> None:
     # No planning run: with no driver trip there is nothing to group, and leaving /agent-runs empty
     # means the first row on stage is the phone call itself.
     print(f"  window: {start.astimezone(TZ):%a %Y-%m-%d %I:%M %p}-{end.astimezone(TZ):%I:%M %p} {config.TIMEZONE}")
+    # seed.py no longer keeps per-vehicle hours on the tuple; every demo car shares one long window
+    avail_start, avail_end = seed.availability()
+    print(f"  vehicles bookable {avail_start.astimezone(TZ):%a %Y-%m-%d %I:%M %p}"
+          f" -> {avail_end.astimezone(TZ):%a %Y-%m-%d %I:%M %p} {config.TIMEZONE}")
     for name, vid in out["vehicles"].items():
         owner = seed.USERS[seed.VEHICLES[vid - 1][0] - 1][0]
-        t0, t1 = seed.VEHICLES[vid - 1][6]
-        print(f"  vehicle {vid}: {owner}'s {name}, free {t0:%I:%M %p}-{t1:%I:%M %p}")
+        print(f"  vehicle {vid}: {owner}'s {name}")
     caller = ", ".join(f"{n}={p}" for n, p in seed.DEMO_PHONES.items()) or "(DEMO_PHONES is empty)"
     print(f"\nReady. Caller: {caller}")
     print("Dial the Twilio number and ask to drive to Meijer in that window.")
