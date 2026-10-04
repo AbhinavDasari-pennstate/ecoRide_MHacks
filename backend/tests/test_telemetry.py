@@ -188,8 +188,11 @@ def test_a_trip_with_no_usable_model_at_all_is_marked_unscored(database, monkeyp
         bm.reset_forest_cache()
 
 
-def test_only_the_anomaly_model_still_counts_as_scored(database):
+def test_only_the_anomaly_model_still_counts_as_scored(database, monkeypatch):
     """The parametric models are gone but the forest is present, so the trip is partly scored."""
+    # Model binaries are intentionally not committed; provide the available-model
+    # result explicitly so this classification test also works in a fresh checkout.
+    monkeypatch.setattr(bm, "anomaly_score", lambda features: (-0.6, True))
     match = confirmed(database)
     with db.conn() as c:
         c.execute("delete from buyer_trips where source = 'booking'")
@@ -197,7 +200,8 @@ def test_only_the_anomaly_model_still_counts_as_scored(database):
         trip_id = telemetry.record_confirmed_ride(c, match["id"])
         score = c.execute("select * from buyer_trip_scores where trip_id = %s", (trip_id,)).fetchone()
     assert score["scored_by"] == "runtime"
-    assert score["anomaly_score"] is not None
+    assert score["anomaly_score"] == pytest.approx(-0.6)
+    assert score["anomaly_flagged"] is True
     assert score["risk_probability"] is None and score["predicted_kwh_per_mi"] is None
 
 
