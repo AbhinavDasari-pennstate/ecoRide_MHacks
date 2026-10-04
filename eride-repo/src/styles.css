@@ -335,18 +335,18 @@
   font-size: 10px;
 }
 .buyer-car-visual {
-  height: 117px;
+  margin: 16px 0;
   display: grid;
   place-items: center;
   position: relative;
 }
-.buyer-car-visual > svg {
-  width: 94px;
-  height: 94px;
-  color: #727658;
+.buyer-car-visual > img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 960 / 567;
+  object-fit: contain;
+  border-radius: 8px;
   z-index: 1;
-  background: #f6f6f0;
-  padding: 8px;
 }
 .buyer-road {
   position: absolute;
@@ -379,6 +379,15 @@
   color: #70745a;
   font-size: 9px;
   letter-spacing: 1px;
+}
+.buyer-photo-credit {
+  margin-top: 12px;
+  color: var(--buyer-muted);
+  font-size: 10px;
+}
+.buyer-photo-credit a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .buyer-stats {
   display: grid;
@@ -521,6 +530,26 @@
 .buyer-bar-row.is-selected .buyer-driver-avatar {
   background: var(--forest);
   color: white;
+}
+.buyer-driver-car {
+  position: relative;
+  flex-shrink: 0;
+  width: 56px;
+}
+.buyer-driver-car > img {
+  width: 56px;
+  height: 34px;
+  object-fit: contain;
+  border-radius: 5px;
+}
+.buyer-driver-car .buyer-driver-avatar {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 21px;
+  height: 21px;
+  border: 2px solid white;
+  font-size: 9px;
 }
 .buyer-bar-body {
   flex: 1;
@@ -969,13 +998,6 @@
   }
   .buyer-vehicle {
     padding: 17px 20px;
-  }
-  .buyer-car-visual {
-    height: 90px;
-  }
-  .buyer-car-visual > svg {
-    width: 80px;
-    height: 80px;
   }
   .buyer-stats {
     grid-template-columns: 1fr 1fr;

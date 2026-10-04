@@ -40,10 +40,20 @@ def make_ctx():
     return core.Ctx(trips={t.id: t for t in trips}, vehicles={v.id: v for v in cars})
 
 
-def plan_json(depart=START, passengers=(1, 2), rationale=("same destination and overlapping windows",)):
+def plan_json(depart=START, passengers=(1, 2), rationale=("same destination and overlapping windows",),
+              vehicle_id=None, pickup_order=()):
+    """Defaults leave vehicle and order empty, so code fills them (core.complete)."""
     return json.dumps({"groups": [{"driver_trip_id": 3, "passenger_trip_ids": list(passengers),
+                                   "vehicle_id": vehicle_id, "pickup_order": list(pickup_order),
                                    "depart_time": planner._iso(depart), "rationale": list(rationale)}],
                        "unassigned": []})
+
+
+def tool_call(name, **args):
+    """A fake response asking for one function call."""
+    fc = SimpleNamespace(name=name, args=args, id=None)
+    return SimpleNamespace(function_calls=[fc], text=None, candidates=[SimpleNamespace(
+        content={"role": "model", "parts": [{"function_call": {"name": name, "args": args}}]})])
 
 
 class FakeClient:
@@ -55,7 +65,8 @@ class FakeClient:
     def generate_content(self, model, contents, config):
         self.calls.append(SimpleNamespace(model=model, contents=list(contents), config=config))
         time.sleep(self.delay)
-        return SimpleNamespace(text=self.texts.pop(0))
+        out = self.texts.pop(0)
+        return SimpleNamespace(text=out) if isinstance(out, str) else out
 
 
 @pytest.fixture(autouse=True)
@@ -201,3 +212,42 @@ def test_no_driver_in_scope_skips_gemini():
     plan, _, log = planner.draft(ctx, "test", mode="gemini", client=fake)
     assert fake.calls == [] and log["planner"] == "deterministic" and not log["fallback_used"]
     assert plan.groups == [] and sorted(u.trip_id for u in plan.unassigned) == [1, 2]
+
+
+def test_tools_answer_then_gemini_picks_vehicle_and_order():
+    ctx = make_ctx()
+    fake = FakeClient(tool_call("get_travel_matrix", trip_ids=[1, 2, 3]),
+                      tool_call("list_available_vehicles", driver_trip_id=3, passenger_trip_ids=[1, 2],
+                                depart_time=planner._iso(START)),
+                      tool_call("validate_plan", groups=[{"driver_trip_id": 3, "passenger_trip_ids": [1, 2],
+                                                          "vehicle_id": 2, "depart_time": planner._iso(START)}]),
+                      tool_call("optimize_pickup_order", driver_trip_id=99, passenger_trip_ids=[]),
+                      plan_json(vehicle_id=4, pickup_order=(1, 2)))      # Gemini picks the Leaf over the Tesla
+    plan, opts, log = planner.draft(ctx, "test", mode="gemini", client=fake)
+    [g] = plan.groups
+    assert (g.vehicle_id, g.pickup_order) == (4, [1, 2]) and core.validate(plan, ctx) == []
+    assert opts[3][0]["vehicle_id"] == 1                  # code still scores every vehicle for the reasons
+    tools = [c for c in log["tool_calls"] if "tool" in c]
+    assert [c["outcome"] for c in tools] == ["ok", "ok", "0 errors", "error"]   # trip 99 does not exist
+    assert log["retries"] == 0 and not log["fallback_used"]
+    sent = fake.calls[1].contents[-1]["parts"][0]["function_response"]["response"]
+    assert sent["origin_mi"]["3"]["1"] > 0 and sent["destination_mi"]["1"]["2"] == 0
+    vehicles = fake.calls[2].contents[-1]["parts"][0]["function_response"]["response"]["vehicles"]
+    assert vehicles[0]["make_model"] == "Tesla Model 3" and vehicles[0]["feasible"]
+    assert "tools" in fake.calls[0].config.model_dump(exclude_none=True)
+
+
+def test_tool_rounds_are_capped(monkeypatch):
+    monkeypatch.setattr(config, "PLANNER_MAX_TOOL_ROUNDS", 1)
+    fake = FakeClient(tool_call("get_travel_matrix", trip_ids=[1]), plan_json())
+    plan, _, log = planner.draft(make_ctx(), "test", mode="gemini", client=fake)
+    assert fake.calls[0].config.tool_config is None
+    assert fake.calls[1].config.tool_config.function_calling_config.mode.value == "NONE"
+    assert_tesla_plan(plan, make_ctx())
+
+
+def test_own_car_driver_never_books_a_vehicle():
+    ctx = make_ctx()
+    ctx.trips[3] = ctx.trips[3].model_copy(update={"needs_vehicle": False})
+    plan, _, _ = planner.draft(ctx, "test", mode="gemini", client=FakeClient(plan_json(vehicle_id=1)))
+    assert plan.groups[0].vehicle_id is None and core.validate(plan, ctx) == []

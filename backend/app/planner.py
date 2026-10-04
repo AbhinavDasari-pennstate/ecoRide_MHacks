@@ -1,6 +1,7 @@
-"""Grouping planner. Gemini drafts who rides with whom (and why); code fills in the vehicle and
-pickup order (core.complete) and checks the result (core.validate). Validator errors go back to
-Gemini for a retry; anything else that goes wrong falls back to core.fallback_plan.
+"""Planner agent. Gemini decides who rides with whom, which vehicle and the pickup order, gathering
+facts through read-only tools (TOOLS). Code fills anything Gemini left empty (core.complete) and checks
+the result (core.validate). Validator errors go back to Gemini for a retry; anything else that goes
+wrong falls back to core.fallback_plan.
 draft() and explain() never raise."""
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from typing import Optional
 
 from google import genai
 from google.genai import types
@@ -21,18 +23,27 @@ EXPLAIN_TIMEOUT_S = 8
 TRANSIENT = {429, 500, 503, 504}   # overloaded or rate-limited: worth another try, unlike 400/401/403
 _NUM = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
 
-SYSTEM = """You group campus ride-share trips. Decide who rides with whom and which driver trip drives.
-Code then picks the vehicle and the pickup order, computes every number, and checks your plan.
+SYSTEM = """You plan campus ride-share trips. Decide who rides with whom, which driver trip drives,
+which vehicle they use and the pickup order. Code computes every number and checks your plan.
+
+Read-only tools:
+- get_travel_matrix(trip_ids): road miles between those trips' origins and between their destinations.
+- list_available_vehicles(driver_trip_id, passenger_trip_ids, depart_time): every vehicle scored for that
+  group (feasible or why not, kg CO2, deadhead miles, cost), best first.
+- optimize_pickup_order(driver_trip_id, passenger_trip_ids): a short pickup order and each passenger's
+  added detour against their limit.
+- validate_plan(groups): dry run of the validator. Call it on your final groups before answering.
 
 Objectives, in priority order:
 1. Minimize total kg CO2 and vehicle-miles across all requests: fewer, fuller vehicles beat more vehicles.
-2. Keep every group feasible:
+2. Prefer the lowest-CO2 feasible vehicle (an EV over a gas car when range, seats and availability allow).
+3. Keep every group feasible:
    - group size (sum of party_size, driver included) fits the seats of an active, free vehicle,
      or own_car_seats when the driver has needs_vehicle false;
    - depart_time is inside every member's window;
-   - each passenger adds at most their detour_limit_mi to the driver's route (use origin_mi);
-   - each passenger's destination is within half a mile of the driver's (use destination_mi).
-3. Then lower cost and shorter travel time.
+   - each passenger adds at most their detour_limit_mi to the driver's route;
+   - each passenger's destination is within half a mile of the driver's.
+4. Then lower cost and shorter travel time.
 
 Rules:
 - Use only trip ids from the context. Every trip appears exactly once: in one group or in unassigned.
@@ -41,7 +52,8 @@ Rules:
 - When no feasible group exists for a trip, put it in unassigned with a short reason.
 - rationale: two or three short reasons for the grouping, in words.
 - Never write figures (no digits at all) in rationale or reasons. Code computes all costs, miles and CO2.
-- Do not choose a vehicle or a pickup order; code does that.
+- vehicle_id: a feasible vehicle id when the driver has needs_vehicle true, otherwise null (own car).
+- pickup_order: exactly the passenger_trip_ids, in the order the driver picks them up.
 - If "replan" is present, an existing match changed (see its cause). Keep its trips going: rebuild the
   group around the change if any feasible alternative exists, otherwise mark the trips unassigned.
 - If the validator rejects your plan, fix every listed error and return the full plan again."""
@@ -57,6 +69,8 @@ so write it in dollars (820 becomes $8.20). No markdown, no lists."""
 class _GroupOut(BaseModel):
     driver_trip_id: int
     passenger_trip_ids: list[int]
+    vehicle_id: Optional[int]      # no defaults: the Gemini response schema rejects them
+    pickup_order: list[int]
     depart_time: str               # ISO 8601 UTC; a plain string keeps the Gemini schema simple
     rationale: list[str]
 
@@ -110,9 +124,9 @@ def _default_client():
 _pool = ThreadPoolExecutor(max_workers=4)
 
 
-def _call(client, contents: list, timeout_s: float, model: str | None = None, **cfg) -> str:
+def _call(client, contents: list, timeout_s: float, model: str | None = None, **cfg):
     """One generate_content call with a hard deadline (raises TimeoutError past it). The SDK retries
-    a transient error once inside that deadline (by default it never retries)."""
+    a transient error once inside that deadline (by default it never retries). Returns the response."""
     conf = types.GenerateContentConfig(
         temperature=config.GEMINI_TEMPERATURE,
         thinking_config=types.ThinkingConfig(thinking_level=config.GEMINI_THINKING_LEVEL),
@@ -120,7 +134,7 @@ def _call(client, contents: list, timeout_s: float, model: str | None = None, **
         http_options=types.HttpOptions(timeout=int(max(timeout_s, 10) * 1000), retry_options=types.HttpRetryOptions(
             attempts=2, initial_delay=0.5, http_status_codes=sorted(TRANSIENT))), **cfg)
     fut = _pool.submit(client.models.generate_content, model=model or config.GEMINI_MODEL, contents=contents, config=conf)
-    return fut.result(timeout=timeout_s).text or ""
+    return fut.result(timeout=timeout_s)
 
 
 def _context(ctx: core.Ctx, replan: dict | None) -> str:
@@ -131,9 +145,6 @@ def _context(ctx: core.Ctx, replan: dict | None) -> str:
             "window_start": _iso(t.window_start), "window_end": _iso(t.window_end), "destination": t.dest_name,
             "solo_mi": round(core.solo_mi(ctx, t), 2), "detour_limit_mi": round(core.detour_limit(ctx, t), 2),
         } for t in trips],
-        # ponytail: full pairwise matrices; fine while the scope is one destination's nearby trips
-        "origin_mi": {t.id: {u.id: round(ctx.dist(t.origin, u.origin), 2) for u in trips if u is not t} for t in trips},
-        "destination_mi": {t.id: {u.id: round(ctx.dist(t.dest, u.dest), 2) for u in trips if u is not t} for t in trips},
         "vehicles": [{
             "id": v.id, "make_model": v.make_model, "fuel_type": v.fuel_type, "seats": v.seats,
             "available": [_iso(v.avail_start), _iso(v.avail_end)],
@@ -146,11 +157,14 @@ def _context(ctx: core.Ctx, replan: dict | None) -> str:
     }, default=str)
 
 
-def _to_plan(text: str) -> core.Plan:
-    """Gemini JSON -> core.Plan. Strings with figures are dropped: numbers come from code only."""
+def _to_plan(text: str, ctx: core.Ctx) -> core.Plan:
+    """Gemini JSON -> core.Plan. Strings with figures are dropped: numbers come from code only.
+    A vehicle for a driver who brings their own car is dropped too (it would book a car nobody needs)."""
     out = _PlanOut.model_validate_json(text)
+    own_car = lambda g: g.driver_trip_id in ctx.trips and not ctx.trips[g.driver_trip_id].needs_vehicle
     return core.Plan(
         groups=[core.Group(driver_trip_id=g.driver_trip_id, passenger_trip_ids=g.passenger_trip_ids,
+                           vehicle_id=None if own_car(g) else g.vehicle_id, pickup_order=g.pickup_order,
                            depart_time=_utc(g.depart_time), rationale=[r for r in g.rationale if not _numbers(r)])
                 for g in out.groups],
         unassigned=[core.Unassigned(trip_id=u.trip_id, reason="no feasible group found" if _numbers(u.reason) else u.reason)
@@ -179,6 +193,68 @@ def _missing(plan: core.Plan, ctx: core.Ctx) -> list[str]:
     return [f"trip {t.id} is missing: put it in a group or in unassigned with a reason" for t in _live(ctx) if t.id not in seen]
 
 
+# ---------------------------------------------------------------- read-only tools
+
+_IDS = {"type": "array", "items": {"type": "integer"}}
+_GROUP = {"type": "object", "required": ["driver_trip_id", "passenger_trip_ids", "depart_time"], "properties": {
+    "driver_trip_id": {"type": "integer"}, "passenger_trip_ids": _IDS,
+    "vehicle_id": {"type": ["integer", "null"]}, "pickup_order": _IDS, "depart_time": {"type": "string"}}}
+TOOLS = [types.Tool(function_declarations=[types.FunctionDeclaration(name=n, description=d, parameters_json_schema={
+    "type": "object", "properties": props, "required": list(props)}) for n, d, props in [
+    ("get_travel_matrix", "Road miles between the given trips' origins and between their destinations.",
+     {"trip_ids": _IDS}),
+    ("list_available_vehicles", "Every vehicle scored for this group, best first: feasible or why not, kg CO2, "
+     "deadhead miles, total cost in cents.",
+     {"driver_trip_id": {"type": "integer"}, "passenger_trip_ids": _IDS, "depart_time": {"type": "string"}}),
+    ("optimize_pickup_order", "A short pickup order for the group and each passenger's added detour vs. their limit.",
+     {"driver_trip_id": {"type": "integer"}, "passenger_trip_ids": _IDS}),
+    ("validate_plan", "Dry run of the validator on these groups. Returns the list of errors (empty = valid).",
+     {"groups": {"type": "array", "items": _GROUP}}),
+]])]
+_NO_TOOLS = types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode="NONE"))
+
+
+def _tool(ctx: core.Ctx, name: str, a: dict) -> dict:
+    """Read-only: nothing here writes anywhere. Unknown trip ids raise KeyError, reported back to Gemini."""
+    t = ctx.trips
+    if name == "get_travel_matrix":
+        ids = [i for i in a.get("trip_ids", []) if i in t]
+        mi = lambda f: {str(i): {str(j): round(ctx.dist(f(t[i]), f(t[j])), 2) for j in ids if j != i} for i in ids}
+        return {"origin_mi": mi(lambda x: x.origin), "destination_mi": mi(lambda x: x.dest)}
+    if name in ("list_available_vehicles", "optimize_pickup_order"):
+        driver = t[a["driver_trip_id"]]
+        # ponytail: nearest-neighbor order; Maps optimizeWaypointOrder refines it when the match is applied
+        order = core.nearest_neighbor_order(ctx, driver, [t[i] for i in a.get("passenger_trip_ids", [])])
+        ordered = [t[i] for i in order]
+        if name == "list_available_vehicles":
+            return {"vehicles": core.vehicle_options(ctx, driver, ordered, _utc(a["depart_time"]))}
+        return {"pickup_order": order,
+                "added_detour_mi": {str(i): round(x, 2) for i, x in core.added_detours(ctx, driver, ordered).items()},
+                "detour_limit_mi": {str(p.id): round(core.detour_limit(ctx, p), 2) for p in ordered}}
+    if name == "validate_plan":
+        groups = [{"vehicle_id": None, "pickup_order": [], "rationale": [], **g} for g in a.get("groups", [])]
+        drafted = _to_plan(json.dumps({"groups": groups, "unassigned": []}), ctx)
+        plan, opts = core.complete(drafted, ctx)
+        return {"errors": core.validate(plan, ctx) + _dropped(drafted, plan, opts, ctx)}
+    raise ValueError(f"unknown tool {name}")
+
+
+def _run_tools(ctx: core.Ctx, calls, log: dict, attempt: int) -> dict:
+    """Answer one round of function calls; returns the user turn holding the function responses."""
+    parts = []
+    for fc in calls:
+        args = dict(fc.args or {})
+        try:
+            res = _tool(ctx, fc.name, args)
+        except Exception as e:      # bad id or arguments: tell Gemini, don't crash the run
+            res = {"error": f"{type(e).__name__}: {e}"[:300]}
+        log["tool_calls"].append({"attempt": attempt, "tool": fc.name, "args": args, "outcome":
+                                  "error" if "error" in res else f"{len(res['errors'])} errors" if "errors" in res else "ok"})
+        parts.append({"function_response": {"name": fc.name, "response": res,
+                                            **({"id": fc.id} if getattr(fc, "id", None) else {})}})
+    return {"role": "user", "parts": parts}
+
+
 # ---------------------------------------------------------------- planners
 
 def draft(ctx: core.Ctx, trigger: str, mode: str | None = None, replan: dict | None = None,
@@ -202,31 +278,38 @@ def draft(ctx: core.Ctx, trigger: str, mode: str | None = None, replan: dict | N
 
 
 def _gemini(ctx, replan, client, log, t0):
-    """Up to 1 + PLANNER_MAX_RETRIES attempts inside PLANNER_TIMEOUT_S total. None = use the fallback."""
+    """Up to 1 + PLANNER_MAX_RETRIES answers inside PLANNER_TIMEOUT_S total; tool rounds in between
+    don't count as answers. None = use the fallback."""
     if not config.GEMINI_API_KEY:
         log["tool_calls"].append({"attempt": 0, "outcome": "no GEMINI_API_KEY"})
         return None
     contents = [_msg("user", "Plan these trips.\n" + _context(ctx, replan))]
-    model = config.GEMINI_MODEL
-    for n in range(1 + config.PLANNER_MAX_RETRIES):
+    model, n, rounds = config.GEMINI_MODEL, 0, 0
+    while n <= config.PLANNER_MAX_RETRIES:
         left = config.PLANNER_TIMEOUT_S - (time.monotonic() - t0)
         if left <= 0:
             break
         log["retries"] = n
         t = time.monotonic()
         try:
-            text = _call(client or _default_client(), contents, left, model, system_instruction=SYSTEM,
-                         response_mime_type="application/json", response_schema=_PlanOut)
+            resp = _call(client or _default_client(), contents, left, model, system_instruction=SYSTEM,
+                         response_mime_type="application/json", response_schema=_PlanOut, tools=TOOLS,
+                         tool_config=_NO_TOOLS if rounds >= config.PLANNER_MAX_TOOL_ROUNDS else None)
         except Exception as e:
             log["tool_calls"].append({"attempt": n, "model": model, "ms": int((time.monotonic() - t) * 1000),
                                       "outcome": "timeout" if isinstance(e, TimeoutError) else _err(e)})
             if getattr(e, "code", None) in TRANSIENT and config.GEMINI_BACKUP_MODEL and model != config.GEMINI_BACKUP_MODEL:
-                model = config.GEMINI_BACKUP_MODEL   # still overloaded after the SDK's retry: switch models
+                model, n = config.GEMINI_BACKUP_MODEL, n + 1   # still overloaded after the SDK's retry: switch models
                 continue
             return None             # timeout, bad key, bad request: another try would not help
+        if calls := getattr(resp, "function_calls", None):
+            rounds += 1             # the model turn goes back verbatim: it carries Gemini 3 thought signatures
+            contents += [resp.candidates[0].content, _run_tools(ctx, calls, log, n)]
+            continue
+        text = resp.text or ""
         log["raw_output"].append(text)
         try:
-            drafted = _to_plan(text)
+            drafted = _to_plan(text, ctx)
             plan, opts = core.complete(drafted, ctx)
             errs = core.validate(plan, ctx) + _dropped(drafted, plan, opts, ctx) + _missing(plan, ctx)
         except Exception as e:      # bad JSON, schema mismatch, bad timestamp
@@ -238,6 +321,7 @@ def _gemini(ctx, replan, client, log, t0):
             return plan, opts
         contents += [_msg("model", text), _msg("user", "The validator rejected that plan:\n- " + "\n- ".join(errs)
                                                + "\nFix every error and return the full plan again.")]
+        n += 1
     return None
 
 
@@ -278,8 +362,8 @@ def explain(facts: dict, client=None) -> str:
     if config.EXPLAIN != "gemini" or not config.GEMINI_API_KEY:
         return template
     try:
-        text = _call(client or _default_client(), [_msg("user", json.dumps(facts, default=str))],
-                     EXPLAIN_TIMEOUT_S, system_instruction=EXPLAIN_SYSTEM).strip()
+        text = (_call(client or _default_client(), [_msg("user", json.dumps(facts, default=str))],
+                      EXPLAIN_TIMEOUT_S, system_instruction=EXPLAIN_SYSTEM).text or "").strip()
     except Exception:
         return template
     return text if text and _numbers_ok(text, facts) else template

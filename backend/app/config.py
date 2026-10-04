@@ -15,7 +15,7 @@ SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 MAPS_SERVER_KEY = os.getenv("MAPS_SERVER_KEY", "")
 # Read at call time (config.PLANNER), so scripts can switch modes at runtime.
-PLANNER = os.getenv("PLANNER", "deterministic")             # gemini | deterministic
+PLANNER = os.getenv("PLANNER", "gemini")                   # gemini (no key = fallback) | deterministic
 EXPLAIN = os.getenv("EXPLAIN", "template")                  # template | gemini
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")  # fastest reliable Flash in an Oct 3 probe (3.7/3.8 were overloaded); 2.5 is closed to new keys
 GEMINI_BACKUP_MODEL = os.getenv("GEMINI_BACKUP_MODEL", "gemini-3.5-flash-lite")  # used after a 429/5xx from GEMINI_MODEL
@@ -23,6 +23,7 @@ GEMINI_BACKUP_MODEL = os.getenv("GEMINI_BACKUP_MODEL", "gemini-3.5-flash-lite") 
 # --- planner ---
 PLANNER_TIMEOUT_S = 20
 PLANNER_MAX_RETRIES = 2
+PLANNER_MAX_TOOL_ROUNDS = 6   # function-call rounds per run, then Gemini must answer
 GEMINI_TEMPERATURE = None     # Gemini 3.x deprecates temperature; None = the SDK omits it
 GEMINI_THINKING_LEVEL = os.getenv("GEMINI_THINKING_LEVEL", "low")  # 3.x Flash defaults to medium (slow); never "minimal" (errors on 3.8 Flash)
 

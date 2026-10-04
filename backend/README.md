@@ -34,7 +34,7 @@ cd backend
 | `SESSION_COOKIE_SECURE` | `false` only for local HTTP; set `true` for HTTPS deployments. |
 | `GEMINI_API_KEY` | optional; a Google AI Studio key (new keys start with `AQ.`); empty = deterministic planner only |
 | `MAPS_SERVER_KEY` | optional; needs **Routes API** and **Geocoding API** enabled; empty = estimates |
-| `PLANNER` | `deterministic` (default) or `gemini` |
+| `PLANNER` | `gemini` (default; deterministic fallback without a key) or `deterministic` |
 | `EXPLAIN` | `template` (default) or `gemini` |
 | `GEMINI_MODEL` | optional override, default `gemini-3.6-flash` (fast and available in an Oct 3 probe; 3.7/3.8 were overloaded) |
 | `GEMINI_BACKUP_MODEL` | optional, default `gemini-3.5-flash-lite`; used when the main model returns 429/5xx |
