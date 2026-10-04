@@ -1,2 +1,7 @@
 # Local Postgres for offline dev/tests. Set DATABASE_URL=local in .env to use it.
 pgserver
+# Offline model training only (scripts/train_buyer_models.py). The API does not import these:
+# the fitted parameters are committed in fixtures/buyer_models.json and scored in pure Python.
+scikit-learn
+numpy
+joblib

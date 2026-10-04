@@ -103,6 +103,54 @@ export function useNotifications(enabled: boolean) {
   });
 }
 
+export type ModelRun = {
+  name: string;
+  kind: string;
+  trained_at: string;
+  library: string;
+  dataset_rows: number;
+  random_seed: number;
+  features: string[];
+  metrics: Record<string, number | string>;
+  notes: string;
+};
+export type TripScore = {
+  tripId: string;
+  driverId: string;
+  startedAt: string;
+  miles: number;
+  features: Record<string, number | boolean>;
+  anomalyScore: number | null;
+  anomalyFlagged: boolean | null;
+  riskProbability: number | null;
+  predictedKwhPerMi: number | null;
+  actualKwhPerMi: number | null;
+  scoredBy: "fixture" | "runtime" | "unscored";
+};
+export type DriverRisk = {
+  driverId: string;
+  trips: number;
+  riskScore: number;
+  meanProbability: number;
+};
+export type BuyerInsights = {
+  simulated: boolean;
+  validated: boolean;
+  disclaimer: string;
+  runs: ModelRun[];
+  tripScores: TripScore[];
+  driverRisk: DriverRisk[];
+};
+
+export function useBuyerInsights(enabled: boolean) {
+  return useQuery({
+    queryKey: ["buyer-insights"],
+    queryFn: () => accountRequest<BuyerInsights>("/buyer/insights"),
+    enabled,
+    retry: false,
+  });
+}
+
 export function useCampusImpact() {
   return useQuery({
     queryKey: ["impact"],

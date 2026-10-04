@@ -943,6 +943,41 @@ def buyer_dataset() -> dict:
             "drivingEvents": events, "eventLabels": EVENT_LABELS}
 
 
+def buyer_insights() -> dict:
+    """Model outputs for the buyer portal: per-trip scores, per-driver risk, and the runs that
+    produced them with their metrics, feature lists and honest notes.
+
+    Everything here was fitted offline on the simulated dataset. Nothing is validated."""
+    with db.conn() as c:
+        runs = c.execute("select name, kind, trained_at, library, dataset_rows, random_seed,"
+                         " features, metrics, notes from buyer_model_runs order by name").fetchall()
+        scores = c.execute("select s.trip_id, t.driver_id, t.started_at, t.miles, s.features,"
+                           " s.anomaly_score, s.anomaly_flagged, s.risk_probability,"
+                           " s.predicted_kwh_per_mi, s.actual_kwh_per_mi, s.scored_by"
+                           " from buyer_trip_scores s join buyer_trips t on t.id = s.trip_id"
+                           " order by t.started_at desc").fetchall()
+        drivers = c.execute("select driver_id, trips, risk_score, mean_probability"
+                            " from buyer_driver_risk order by risk_score desc, driver_id").fetchall()
+    return {
+        "simulated": True,
+        "validated": False,
+        "disclaimer": ("Models trained on simulated data. No real telemetry was used, and no accuracy"
+                       " claim applies outside this dataset. Not a validated safety score."),
+        "runs": [{**_out(r), "features": r["features"], "metrics": r["metrics"]} for r in runs],
+        "tripScores": [{"tripId": r["trip_id"], "driverId": r["driver_id"],
+                        "startedAt": _iso_ms(r["started_at"]), "miles": r["miles"],
+                        "features": r["features"], "anomalyScore": r["anomaly_score"],
+                        "anomalyFlagged": r["anomaly_flagged"],
+                        "riskProbability": r["risk_probability"],
+                        "predictedKwhPerMi": r["predicted_kwh_per_mi"],
+                        "actualKwhPerMi": r["actual_kwh_per_mi"], "scoredBy": r["scored_by"]}
+                       for r in scores],
+        "driverRisk": [{"driverId": r["driver_id"], "trips": r["trips"],
+                        "riskScore": r["risk_score"],
+                        "meanProbability": r["mean_probability"]} for r in drivers],
+    }
+
+
 # ---------------------------------------------------------------- live location
 
 LOCATION_MAX_AGE_S = 15 * 60   # older positions are hidden rather than shown as current

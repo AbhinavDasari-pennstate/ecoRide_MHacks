@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import config, core, db, maps  # noqa: E402
 from scripts.load_buyer_dataset import load as load_buyer_dataset  # noqa: E402
+from scripts.load_buyer_dataset import load_models as load_buyer_models  # noqa: E402
 
 TZ = ZoneInfo(config.TIMEZONE)
 MEIJER = dict(config.KNOWN_PLACES["meijer"])   # used when geocoding is unavailable
@@ -99,6 +100,7 @@ def reset(clear_cache: bool = False, *, allow_remote_reset: bool = False) -> dic
             m.prefetch(pts)
             m.route(pts[0], [pts[1], pts[2]], pts[-1])    # Alex -> Maya -> Jordan -> Meijer
     load_buyer_dataset()
+    load_buyer_models()      # restores the committed scores, so a reset never retrains
     start, end = scenario_window()
     return {"users": {u[0]: n for n, u in enumerate(USERS, 1)},
             "vehicles": {v[1]: n for n, v in enumerate(VEHICLES, 1)},
