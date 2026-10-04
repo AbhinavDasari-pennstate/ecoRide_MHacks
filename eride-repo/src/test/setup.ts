@@ -5,6 +5,13 @@ Object.defineProperty(window, "scrollTo", {
   value: () => {},
 });
 
+// jsdom does not implement element scrolling used by the buyer trip details.
+Object.defineProperty(Element.prototype, "scrollIntoView", {
+  configurable: true,
+  writable: true,
+  value: () => {},
+});
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({
