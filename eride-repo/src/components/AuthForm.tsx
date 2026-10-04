@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, Leaf } from "lucide-react";
 import {
   accountHome,
   accountRequest,
@@ -54,8 +55,27 @@ export function AuthForm({ signup, next }: { signup: boolean; next: string }) {
   }
   return (
     <main className="auth-layout">
+      <aside className="auth-story">
+        <Leaf size={32} strokeWidth={1.5} />
+        <p className="account-eyebrow">ERIDE</p>
+        <h2>
+          Campus
+          <br />
+          ride sharing
+        </h2>
+        <p>Book rides or manage your vehicle listings.</p>
+        <div className="auth-story-bottom">
+          <span>Riders</span>
+          <span>Car owners</span>
+          <span>Data buyers</span>
+        </div>
+      </aside>
       <section className="auth-form-panel">
+        <p className="account-eyebrow">{signup ? "Sign up" : "Welcome back"}</p>
         <h1>{signup ? "Create your account" : "Sign in to ERIDE"}</h1>
+        <p className="account-muted">
+          {signup ? "Use your email and a password." : "Sign in to access your account."}
+        </p>
         <form onSubmit={(event) => void submit(event)} className="account-form">
           {signup && (
             <label className="account-label">
@@ -113,6 +133,7 @@ export function AuthForm({ signup, next }: { signup: boolean; next: string }) {
           )}
           <button className="account-button w-full" disabled={busy} type="submit">
             {busy ? "Please wait…" : signup ? "Create account" : "Sign in"}
+            <ArrowRight size={16} />
           </button>
         </form>
         <p className="auth-switch">
@@ -121,9 +142,9 @@ export function AuthForm({ signup, next }: { signup: boolean; next: string }) {
             {signup ? "Sign in" : "Create an account"}
           </Link>
         </p>
-        {next === "/buyer" && (
-          <p className="account-field-note mt-6">Buyer access requires account approval.</p>
-        )}
+        <p className="account-field-note mt-6">
+          Data buyers sign in with an account approved by the ERIDE team.
+        </p>
       </section>
     </main>
   );

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { ArrowLeft, ArrowRight, Check, Clock3, Leaf, MapPin, RefreshCw } from "lucide-react";
 import {
   accountRequest,
   useAccountDashboard,
@@ -111,15 +112,21 @@ export function BookingFlow() {
     await act(async () => {
       await accountRequest(`/trips/${trip.id}/plan`, { method: "POST" });
       await dashboard.refetch();
-      setNotice("Ride search updated.");
+      setNotice("Your trip has been checked for available rides.");
     });
   }
 
   return (
     <main className="account-page pb-20">
-      <Link to="/profile" className="account-muted mb-6 inline-block text-sm underline">
-        My trips
-      </Link>
+      <div className="mb-8 flex items-center justify-between gap-4 text-sm">
+        <Link to="/" className="account-muted inline-flex items-center gap-2">
+          <ArrowLeft className="size-4" />
+          Home
+        </Link>
+        <span className="account-muted">
+          {currentStep === 1 ? "New trip" : `Trip #${tripId ?? "—"}`}
+        </span>
+      </div>
       <ol aria-label="Booking progress" className="mb-9 grid grid-cols-3 gap-3">
         {["Your trip", "Find a ride", "Confirm"].map((label, i) => (
           <li
@@ -133,17 +140,26 @@ export function BookingFlow() {
         ))}
       </ol>
       <header className="mb-8 max-w-2xl">
-        <h1 className="text-3xl font-semibold tracking-tight">
+        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
           {currentStep === 1
-            ? "Book a trip"
+            ? "Where are we going?"
             : match?.status === "confirmed"
-              ? "Trip confirmed"
+              ? "Ride confirmed."
               : currentStep === 2
-                ? "Find a ride"
+                ? "Find a ride."
                 : me?.status === "accepted"
-                  ? "Waiting for confirmation"
-                  : "Confirm your ride"}
+                  ? "Your place is accepted."
+                  : "Review your ride."}
         </h1>
+        <p className="account-muted mt-4 text-lg">
+          {currentStep === 1
+            ? "Choose your pickup, destination, and departure time."
+            : match?.status === "confirmed"
+              ? "Your group and vehicle owner have confirmed the plan."
+              : currentStep === 2
+                ? "We'll look for people headed your way and a suitable shared vehicle."
+                : "Your ride is confirmed once every traveler and the vehicle owner agree."}
+        </p>
       </header>
       {error && (
         <p role="alert" className="account-error mb-5">
@@ -156,7 +172,7 @@ export function BookingFlow() {
         </p>
       )}
       {currentStep === 1 ? (
-        <div className="max-w-2xl">
+        <div className="grid items-start gap-6 lg:grid-cols-[1.35fr_.65fr]">
           <form onSubmit={(event) => void submit(event)} className="account-panel space-y-6">
             <div>
               <label className="account-label" htmlFor="trip-pickup">
@@ -260,8 +276,24 @@ export function BookingFlow() {
               type="submit"
             >
               {busy ? "Saving your trip…" : "Find my ride"}
+              <ArrowRight className="size-4" />
             </button>
           </form>
+          <aside className="rounded-[1.75rem] bg-primary p-7 text-primary-foreground sm:p-8">
+            <Leaf className="mb-10 size-8" />
+            <h2 className="text-2xl font-semibold leading-tight">
+              Trip costs.
+              <br />
+              CO₂ estimates.
+            </h2>
+            <p className="mt-4 text-sm leading-relaxed opacity-80">
+              See the estimated cost and environmental savings before you confirm your place.
+            </p>
+            <div className="mt-8 border-t border-current/20 pt-5 text-sm">
+              <MapPin className="mb-3 size-5" />
+              Currently serving Ann Arbor campus pickup points.
+            </div>
+          </aside>
         </div>
       ) : dashboard.isPending ? (
         <p role="status" className="account-panel">
@@ -300,18 +332,22 @@ export function BookingFlow() {
               className="account-muted inline-flex items-center gap-2 text-sm"
               onClick={() => void go("2")}
             >
+              <ArrowLeft className="size-4" />
               Back to ride options
             </button>
           )}
           <AccountTripCard trip={trip} match={match} />
           {!match ? (
             <section className="account-panel">
+              <Clock3 className="mb-4 size-7 text-primary" />
               <h2 className="text-xl font-semibold">Your request is saved.</h2>
               <p className="account-muted mt-3 max-w-2xl">
                 {trip.role === "passenger"
-                  ? "No ride is available yet. Waiting for a driver and vehicle."
-                  : "No shared vehicle is available yet."}{" "}
-                This page updates automatically.
+                  ? "We're waiting for a driver, vehicle, and compatible trips. Your request stays here while we look."
+                  : "We're looking for a suitable shared vehicle and compatible travelers. Your request stays here while we look."}
+              </p>
+              <p className="account-muted mt-2 text-sm">
+                This page updates automatically. You can also check back in My trips.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <button
@@ -319,8 +355,12 @@ export function BookingFlow() {
                   className="account-button"
                   onClick={() => void refreshMatch()}
                 >
+                  <RefreshCw className="size-4" />
                   {busy ? "Checking…" : "Check for rides"}
                 </button>
+                <Link to="/profile" className="account-secondary">
+                  My trips
+                </Link>
               </div>
             </section>
           ) : (
@@ -339,6 +379,9 @@ export function BookingFlow() {
                     .filter((member) => member.status !== "cancelled")
                     .map((member) => (
                       <li key={member.trip_id} className="flex items-center gap-3 py-4">
+                        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-secondary font-semibold">
+                          {member.name.slice(0, 1)}
+                        </span>
                         <div className="flex-1">
                           <span className="font-semibold">{member.name}</span>
                           {member.user_id === user?.id && (
@@ -367,6 +410,9 @@ export function BookingFlow() {
                             : "No rental approval needed"}
                     </p>
                   </div>
+                  {match.booking?.status === "approved" && (
+                    <Check className="size-5 text-primary" />
+                  )}
                 </div>
               </section>
               {currentStep === 2 &&
@@ -438,16 +484,24 @@ export function BookingFlow() {
                 <div className="flex justify-end">
                   <button className="account-button" onClick={() => void go("3")}>
                     Review and confirm
+                    <ArrowRight className="size-4" />
                   </button>
                 </div>
               ) : (
                 <section className="account-panel">
-                  <p className="account-muted">
+                  <h2 className="text-xl font-semibold">
                     {match.status === "confirmed"
-                      ? `Departure: ${campusDay(match.depart_time)} at ${campusTime(match.depart_time)} (Ann Arbor time). Coordinate pickup with your group before departure.`
+                      ? "Trip confirmed"
                       : me?.status === "accepted"
-                        ? "You've accepted. Waiting for the other travelers and vehicle owner."
-                        : "The trip is confirmed after all travelers and the vehicle owner accept."}
+                        ? "Waiting for your ride to be confirmed"
+                        : "Ready to share the ride?"}
+                  </h2>
+                  <p className="account-muted mt-3">
+                    {match.status === "confirmed"
+                      ? `Your group departs on ${campusDay(match.depart_time)} at ${campusTime(match.depart_time)} (Ann Arbor time). ${trip.role === "passenger" ? "Confirm your pickup timing with the driver before departure." : "Coordinate pickup timing with your passengers before departure."}`
+                      : me?.status === "accepted"
+                        ? "You've accepted this plan. This page updates when the other travelers and vehicle owner respond."
+                        : "Confirm only your place. The other travelers and the vehicle owner respond from their own accounts."}
                   </p>
                   <div className="mt-6 flex flex-wrap gap-3">
                     {me?.status === "pending" && (
@@ -466,8 +520,12 @@ export function BookingFlow() {
                         }
                       >
                         {busy ? "Confirming…" : "Confirm my place"}
+                        <Check className="size-4" />
                       </button>
                     )}
+                    <Link to="/profile" className="account-secondary">
+                      My trips
+                    </Link>
                   </div>
                 </section>
               )}

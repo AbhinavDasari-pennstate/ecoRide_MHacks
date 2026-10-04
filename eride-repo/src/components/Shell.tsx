@@ -5,6 +5,7 @@ import { LogOut } from "lucide-react";
 import { Wordmark } from "./Logo";
 import { PwaInstall } from "./PwaInstall";
 import { accountHome, accountRequest, allowedPage, useSession } from "@/lib/account-api";
+import { resetStore } from "@/lib/store";
 
 export function Shell() {
   const location = useLocation(),
@@ -20,6 +21,7 @@ export function Shell() {
       void client.cancelQueries();
       client.removeQueries({ predicate: (query) => query.queryKey[0] !== "session" });
       client.setQueryData(["session"], { user: null });
+      resetStore();
     };
     window.addEventListener("eride-session-expired", expire);
     return () => window.removeEventListener("eride-session-expired", expire);
@@ -27,6 +29,7 @@ export function Shell() {
   useEffect(() => {
     if (session.data?.user === null) {
       client.removeQueries({ predicate: (query) => query.queryKey[0] !== "session" });
+      resetStore();
     }
   }, [client, session.data?.user]);
   async function signOut() {
@@ -37,6 +40,7 @@ export function Shell() {
       await client.cancelQueries();
       client.clear();
       client.setQueryData(["session"], { user: null });
+      resetStore();
       await navigate({ to: "/" });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Couldn't sign out. Try again.");

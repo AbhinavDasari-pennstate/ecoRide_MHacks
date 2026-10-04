@@ -286,11 +286,14 @@ describe("account booking", () => {
   it("offers landing-page actions that fit the signed-in role", () => {
     renderPage(<Home />);
     expect(screen.getByRole("link", { name: "Book a trip" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "List your car" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Share your car" })).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Vehicle listings are available to owner accounts."),
+    ).toBeInTheDocument();
     cleanup();
     mocks.user.role = "owner";
     renderPage(<Home />);
-    expect(screen.getByRole("link", { name: "Manage cars" })).toHaveAttribute("href", "/owner");
+    expect(screen.getByRole("link", { name: "Share your car" })).toHaveAttribute("href", "/owner");
     cleanup();
     mocks.user.role = "buyer";
     renderPage(<Home />);

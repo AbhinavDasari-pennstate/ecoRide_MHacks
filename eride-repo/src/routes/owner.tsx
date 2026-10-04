@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { Car, Check, Plus, X, Zap } from "lucide-react";
 import { accountRequest, useAccountDashboard, useSession } from "@/lib/account-api";
 import { campusDay, windowLabel } from "@/lib/backend";
 
@@ -85,19 +86,28 @@ export function OwnerPage() {
       await dashboard.refetch();
       setShowForm(false);
       setModel("");
-      setNotice("Vehicle listed.");
+      setNotice("Your vehicle is listed and ready for booking requests.");
     });
   }
 
   return (
     <main className="account-page space-y-9 pb-20">
-      <header className="account-page-heading">
-        <h1>My cars</h1>
+      <header className="flex flex-wrap items-end justify-between gap-6">
+        <div>
+          <p className="account-muted mb-3 text-xs font-semibold uppercase tracking-[.18em]">
+            Owner space
+          </p>
+          <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">My cars</h1>
+          <p className="account-muted mt-4 max-w-xl text-lg">
+            Share your parked car with the campus. You choose which requests to approve.
+          </p>
+        </div>
         <button
           className="account-button"
           onClick={() => setShowForm(!showForm)}
           aria-expanded={showForm}
         >
+          {showForm ? <X className="size-4" /> : <Plus className="size-4" />}
           {showForm ? "Close form" : "List a vehicle"}
         </button>
       </header>
@@ -251,11 +261,12 @@ export function OwnerPage() {
             </div>
           </div>
           <p className="account-muted text-xs">
-            Times use your device's time zone. Check the default range and efficiency against your
-            car.
+            Availability uses your device's time zone. Check the example range and efficiency
+            against your vehicle; they are used to estimate trip impact.
           </p>
           <button className="account-button" disabled={busy || !user} type="submit">
             {busy ? "Saving listing…" : "Publish listing"}
+            <Check className="size-4" />
           </button>
         </form>
       )}
@@ -283,7 +294,13 @@ export function OwnerPage() {
               </span>
             </div>
             {bookings.length === 0 ? (
-              <p className="account-muted text-sm">No booking requests.</p>
+              <div className="account-panel">
+                <Check className="size-8 text-primary" />
+                <h3 className="mt-4 font-semibold">Nothing waiting for approval.</h3>
+                <p className="account-muted mt-2 text-sm">
+                  New requests will appear here when your vehicle matches a trip.
+                </p>
+              </div>
             ) : (
               <div className="grid gap-5 md:grid-cols-2">
                 {bookings.map((match) => {
@@ -292,7 +309,7 @@ export function OwnerPage() {
                     <article key={booking.id} className="account-panel">
                       <div className="flex items-start justify-between gap-3">
                         <h3 className="text-xl font-semibold">{match.vehicle!.make_model}</h3>
-                        <span className="text-sm font-medium">
+                        <span className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold">
                           {booking.status === "approved" ? "Approved" : "Needs your approval"}
                         </span>
                       </div>
@@ -324,7 +341,9 @@ export function OwnerPage() {
                                   method: "POST",
                                 });
                                 await dashboard.refetch();
-                                setNotice("Booking approved.");
+                                setNotice(
+                                  "Booking approved. The travelers will see your response.",
+                                );
                               })
                             }
                           >
@@ -339,7 +358,9 @@ export function OwnerPage() {
                                   method: "POST",
                                 });
                                 await dashboard.refetch();
-                                setNotice("Booking declined.");
+                                setNotice(
+                                  "Booking declined. We'll look for another vehicle for this group.",
+                                );
                               })
                             }
                           >
@@ -347,7 +368,8 @@ export function OwnerPage() {
                           </button>
                         </div>
                       ) : (
-                        <p className="mt-5 text-sm text-primary">
+                        <p className="mt-5 flex items-center gap-2 text-sm text-primary">
+                          <Check className="size-4" />
                           {match.status === "confirmed"
                             ? "The trip is confirmed."
                             : "Waiting for the travelers to confirm."}
@@ -362,17 +384,31 @@ export function OwnerPage() {
           <section>
             <h2 className="mb-5 text-xl font-semibold">Your vehicles</h2>
             {vehicles.length === 0 ? (
-              <p className="account-muted text-sm">No vehicles listed.</p>
+              <div className="account-panel">
+                <Car className="size-8 text-primary" />
+                <h3 className="mt-4 font-semibold">Give your parked car a purpose.</h3>
+                <p className="account-muted mt-2 text-sm">
+                  Add a vehicle and its available hours to get started.
+                </p>
+                <button className="account-secondary mt-5" onClick={() => setShowForm(true)}>
+                  Add your first vehicle
+                </button>
+              </div>
             ) : (
               <div className="grid gap-5 md:grid-cols-2">
                 {vehicles.map((vehicle) => (
                   <article key={vehicle.id} className="account-panel">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-xl font-semibold">{vehicle.make_model}</h3>
+                    <div className="flex items-center justify-between">
+                      {vehicle.fuel_type === "ev" ? (
+                        <Zap className="size-6 text-primary" />
+                      ) : (
+                        <Car className="size-6 text-primary" />
+                      )}
                       <span className="account-muted text-xs">
                         {vehicle.active ? "Listed" : "Removed"}
                       </span>
                     </div>
+                    <h3 className="mt-5 text-xl font-semibold">{vehicle.make_model}</h3>
                     <p className="account-muted mt-2 text-sm">
                       {vehicle.seats} seats · {vehicle.fuel_type === "ev" ? "Electric" : "Gasoline"}{" "}
                       · ${(vehicle.price_per_hour_cents / 100).toFixed(2)}/hour
@@ -392,7 +428,9 @@ export function OwnerPage() {
                                 method: "POST",
                               });
                               await dashboard.refetch();
-                              setNotice("Listing removed. Its reservations have been cancelled.");
+                              setNotice(
+                                "Your listing was removed. Affected trips will look for a replacement.",
+                              );
                             })
                           }
                         >
