@@ -35,6 +35,11 @@ export default defineConfig({
       },
     },
   },
+  // Production /api proxy (Vercel). Dev uses the Vite proxy above. Same origin keeps session cookies first-party.
+  // The wrapper's nitro type omits routeRules, but it passes the object straight to nitro.
+  nitro: {
+    routeRules: { "/api/**": { proxy: "https://eride-api.vercel.app/**" } },
+  } as { preset?: string },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
